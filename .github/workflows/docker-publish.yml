@@ -1,0 +1,38 @@
+name: Publish Docker Image
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push container image
+        run: |
+          dotnet publish ./src/SpreadsheetMcpServer/SpreadsheetMcpServer.csproj \
+            -c Release \
+            -r linux-x64 \
+            --self-contained false \
+            -t:PublishContainer \
+            -p:ContainerRegistry=docker.io \
+            -p:ContainerRepository=erlizs/spreadsheet-mcp-server \
+            -p:ContainerImageTag=${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}

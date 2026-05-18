@@ -1,0 +1,9 @@
+<Solution>
+    <Folder Name="/src/">
+        <Project Path="src/SpreadsheetMcpServer/SpreadsheetMcpServer.csproj" />
+        <Project Path="src/SpreadsheetMcpServer.Core/SpreadsheetMcpServer.Core.csproj" />
+    </Folder>
+    <Folder Name="/tests/">
+        <Project Path="tests/SpreadsheetMcpServer.Tests/SpreadsheetMcpServer.Tests.csproj" />
+    </Folder>
+</Solution>
