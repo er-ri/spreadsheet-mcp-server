@@ -81,14 +81,3 @@ dotnet publish src/SpreadsheetMcpServer/SpreadsheetMcpServer.csproj \
   -p:ContainerRegistry=docker.io \
   -p:ContainerRepository=erlizs/spreadsheet-mcp-server
 ```
-
-## Local MCP configuration
-
-`.mcp.json` at the repo root registers two development server instances for Claude Code:
-
-| Name | How it runs |
-|------|-------------|
-| `spreadsheet-mcp-server` | `dotnet run` against the local source |
-| `spreadsheet-mcp-server-docker` | Docker with a volume mount to `/data` (disabled by default) |
-
-To test against the Docker image, enable `spreadsheet-mcp-server-docker` in `.mcp.json` and set the volume path to a folder with your test `.xlsx` files.

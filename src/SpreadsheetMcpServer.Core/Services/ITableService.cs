@@ -16,7 +16,7 @@ public interface ITableService
     /// Creates an Excel table over the given range on the specified sheet.
     /// The first row of the range must already contain header values.
     /// </summary>
-    void CreateTable(string spreadSheetPath, SerializableTable tableInfo, string sheetName);
+    void CreateTable(string spreadSheetPath, string sheetName, SerializableTable tableInfo);
 
     /// <summary>
     /// Removes the named table from the specified sheet.

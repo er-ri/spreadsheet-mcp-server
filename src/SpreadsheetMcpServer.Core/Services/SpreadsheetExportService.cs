@@ -23,7 +23,7 @@ public class SpreadsheetExportService : ISpreadsheetExportService
             .Select(o => o.Properties().ToDictionary(p => p.Name, p => (object?)p.Value.ToObject<object>()))
             .ToList();
 
-        var tempSpreadSheetPath = Path.Combine(Path.GetTempPath(), "temp.xlsx");
+        var tempSpreadSheetPath = Path.Combine(Path.GetTempPath(), $"temp_{Guid.NewGuid():N}.xlsx");
         var tempSheetName = "tempSheet";
 
         MiniExcel.SaveAs(tempSpreadSheetPath, rows, sheetName: tempSheetName);

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "spreadsheet-mcp-server": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": ["run", "--project", "src/SpreadsheetMcpServer/SpreadsheetMcpServer.csproj"],
+      "env": {
+        "SPREADSHEET_BASE_PATH": "./"
+      }
+    }
+  }
+}
+

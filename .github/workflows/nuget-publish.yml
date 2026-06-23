@@ -1,15 +1,12 @@
-name: CI
+name: Publish NuGet Package
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+    tags:
+      - 'v*'
 
 jobs:
-  build-and-test:
+  publish:
     runs-on: ubuntu-latest
 
     steps:
@@ -26,14 +23,11 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore
 
-      - name: Restore tools
-        run: dotnet tool restore
-
-      - name: Check formatting
-        run: dotnet tool run csharpier check .
-
       - name: Build
         run: dotnet build --no-restore -c Release
 
-      - name: Test
-        run: dotnet test --no-build -c Release --logger "console;verbosity=detailed"
+      - name: Pack
+        run: dotnet pack ./src/SpreadsheetMcpServer/SpreadsheetMcpServer.csproj --no-build -c Release -o ./artifacts
+
+      - name: Push to NuGet
+        run: dotnet nuget push ./artifacts/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json

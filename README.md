@@ -30,12 +30,13 @@ Add the configuration snippet to your MCP client's settings file (e.g. `.mcp.jso
 | Tool | What it does |
 |------|-------------|
 | `GetWorkingDirectory` | Returns the base folder the server uses to resolve file paths. Call this first if you're unsure of the path. |
-| `GetAllWorksheets` | Lists all sheet names in a workbook. |
-| `ReadSpreadSheet` | Reads every cell in a sheet — returns address, value, data type, and formula. |
-| `UpdateCells` | Writes values to one or more cells. Addresses must be in `SheetName!CellRef` format (e.g. `Sheet1!A1`). |
-| `GetTables` | Lists all Excel tables on a sheet. |
-| `CreateTable` | Creates a formatted Excel table from a cell range. The first row must contain headers. |
-| `DeleteTable` | Removes a named Excel table from a sheet. |
+| `GetAllWorksheets` | Lists all sheet names in a workbook, each with its used range. |
+| `LoadRange` | Reads non-empty cells from a worksheet within a range (default `A1:Q60`). Returns address, value, data type, formula, formatting, and merged-cell info. Accepts a `threshold` to cap JSON output size. |
+| `UpdateRange` | Writes values, formulas, or formatting to one or more cells (bare cell refs, e.g. `A1`). Supports typed values (Number, Boolean, Date, text), formulas, and full cell formatting. Set both Value and Formula to null to clear a cell. |
+| `GetTables` | Lists all Excel tables defined on a worksheet. |
+| `CreateTable` | Converts a cell range into a named Excel table with auto-filter, sortable headers, and optional row banding. Write data rows with `UpdateRange` first, then call this to add headers and table formatting. |
+| `DeleteTable` | Removes a named Excel table from a worksheet. |
+| `ExportJsonToSpreadSheet` | Exports a JSON array (or single object) to a new worksheet in an Excel file. Creates the file if it does not exist; throws if a sheet with that name already exists. |
 
 ## License
 

@@ -30,7 +30,7 @@ public class TableService : ITableService
     /// Creates an Excel table over the given range on the specified sheet.
     /// The first row of the range must already contain header values.
     /// </summary>
-    public void CreateTable(string spreadSheetPath, SerializableTable tableInfo, string sheetName)
+    public void CreateTable(string spreadSheetPath, string sheetName, SerializableTable tableInfo)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(tableInfo.Name);
         ArgumentException.ThrowIfNullOrWhiteSpace(tableInfo.Reference);

@@ -6,11 +6,22 @@
         <ContainerFamily>alpine</ContainerFamily>
         <ContainerUser>root</ContainerUser>
         <RuntimeIdentifiers>linux-x64;linux-arm64</RuntimeIdentifiers>
+
+        <!-- NuGet dotnet tool -->
+        <PackAsTool>true</PackAsTool>
+        <ToolCommandName>spreadsheet-mcp-server</ToolCommandName>
+        <PackageId>SpreadsheetMcpServer</PackageId>
+        <Description>An MCP server for reading and writing Excel/XLSX files via the Model Context Protocol.</Description>
+        <Authors>er-ri</Authors>
+        <PackageTags>mcp;excel;xlsx;spreadsheet;modelcontextprotocol</PackageTags>
+        <RepositoryUrl>https://github.com/er-ri/spreadsheet-mcp-server</RepositoryUrl>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.2" />
-        <PackageReference Include="ModelContextProtocol" Version="0.7.0-preview.1" />
+        <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+        <PackageReference Include="MinVer" Version="6.0.0" PrivateAssets="All" />
+        <PackageReference Include="ModelContextProtocol" Version="1.4.0" />
     </ItemGroup>
 
     <ItemGroup>
