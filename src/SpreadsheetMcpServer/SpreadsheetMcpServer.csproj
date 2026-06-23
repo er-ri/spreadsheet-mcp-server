@@ -5,8 +5,6 @@
         <ContainerRepository>erlizs/spreadsheet-mcp-server</ContainerRepository>
         <ContainerFamily>alpine</ContainerFamily>
         <ContainerUser>root</ContainerUser>
-        <RuntimeIdentifiers>linux-x64;linux-arm64</RuntimeIdentifiers>
-
         <!-- NuGet dotnet tool -->
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>spreadsheet-mcp-server</ToolCommandName>
