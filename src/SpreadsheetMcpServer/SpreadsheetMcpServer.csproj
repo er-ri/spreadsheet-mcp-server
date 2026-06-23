@@ -14,6 +14,9 @@
         <PackageTags>mcp;excel;xlsx;spreadsheet;modelcontextprotocol</PackageTags>
         <RepositoryUrl>https://github.com/er-ri/spreadsheet-mcp-server</RepositoryUrl>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <!-- Recognize tags of the form vX.Y.Z (e.g. v1.0.3). Without this, MinVer's
+             default empty prefix ignores the 'v' tag and falls back to 0.0.0-alpha.0.<height>. -->
+        <MinVerTagPrefix>v</MinVerTagPrefix>
     </PropertyGroup>
 
     <ItemGroup>
