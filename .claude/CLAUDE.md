@@ -32,5 +32,5 @@ tests/
 - `SerializableCellFormat` carries full visual formatting (font, colors, alignment, borders); read via `LoadRange`, written via `UpdateRange`
 - `SerializableSheet` includes `MergedRanges` (all merged regions intersecting the loaded range) and per-cell `MergeAddress` on anchor cells
 
-**MCP tools exposed (13):**
-`GetWorkingDirectory`, `GetAllWorksheets`, `ManageWorksheet`, `LoadRange`, `LoadRangeInMarkdownTable`, `FindStringsInSheets`, `UpdateRange`, `GetTables`, `CreateTable`, `DeleteTable`, `ExportJsonToSpreadSheet`, `GetPictures`, `PastePictures`
+**MCP tools exposed (11):**
+`GetWorkingDirectory`, `GetAllWorksheets`, `ManageWorksheet`, `LoadRange`, `LoadRangeInMarkdownTable`, `FindStringsInSheets`, `UpdateRange`, `ManageTables`, `ExportJsonToSpreadSheet`, `GetPictures`, `PastePictures`

@@ -129,34 +129,25 @@ public static class ToolEntry
     [
         McpServerTool,
         Description(
-            "Get all Excel tables defined on a worksheet. Prefix the filename with the path from GetWorkingDirectory."
-        )
-    ]
-    public static List<SerializableTable> GetTables(string spreadSheetPath, string sheetName) =>
-        _tableService.GetTables(spreadSheetPath, sheetName);
-
-    [
-        McpServerTool,
-        Description(
-            "Convert a cell range into a named Excel Table with auto-filter dropdowns, sortable headers, and optional row banding. "
+            "Get, create, or delete an Excel table on a worksheet. "
+                + "Prefix the spreadSheetPath with the path from GetWorkingDirectory. "
+                + "'action' must be 'get', 'create', or 'delete'. "
+                + "For 'get', all tables defined on sheetName are returned; tableName and table are ignored. "
+                + "For 'create', 'table' is required — it converts a cell range into a named Excel Table with auto-filter dropdowns, sortable headers, and optional row banding. "
                 + "Use this whenever you are writing structured tabular data (a header row plus one or more data rows) to a spreadsheet — prefer it over writing plain cells with UpdateRange for any grid-shaped dataset. "
-                + "Workflow: (1) write the data rows (not the header row) into the range first with UpdateRange, then (2) call CreateTable — it writes the column names from 'columns' into the first row of 'reference' automatically. "
-                + "Prefix spreadSheetPath with the path from GetWorkingDirectory. "
-                + "'reference' must be a full range covering headers and data, e.g. 'A1:C5'. "
-                + "Use 'styleName' for a built-in table style (e.g. 'TableStyleMedium9'); omit for no style."
+                + "Workflow: (1) write the data rows (not the header row) into the range first with UpdateRange, then (2) call ManageTables with action 'create' — it writes the column names from 'table.columns' into the first row of 'table.reference' automatically. "
+                + "'table.reference' must be a full range covering headers and data, e.g. 'A1:C5'. Use 'table.styleName' for a built-in table style (e.g. 'TableStyleMedium9'); omit for no style. "
+                + "For 'delete', 'tableName' is required — the named table is removed from sheetName. "
+                + "Returns the list of tables remaining on sheetName after the operation."
         )
     ]
-    public static void CreateTable(string spreadSheetPath, string sheetName, SerializableTable table) =>
-        _tableService.CreateTable(spreadSheetPath, sheetName, table);
-
-    [
-        McpServerTool,
-        Description(
-            "Delete a named Excel table from the specified worksheet. Prefix the spreadSheetPath with the path from GetWorkingDirectory."
-        )
-    ]
-    public static void DeleteTable(string spreadSheetPath, string sheetName, string tableName) =>
-        _tableService.DeleteTable(spreadSheetPath, sheetName, tableName);
+    public static List<SerializableTable> ManageTables(
+        string spreadSheetPath,
+        string sheetName,
+        string action,
+        string? tableName = null,
+        SerializableTable? table = null
+    ) => _tableService.ManageTables(spreadSheetPath, sheetName, action, tableName, table);
 
     [
         McpServerTool,
