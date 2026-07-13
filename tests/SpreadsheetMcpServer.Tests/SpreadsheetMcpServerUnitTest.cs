@@ -491,7 +491,7 @@ public class SpreadsheetMcpServerUnitTest
     }
 
     [Fact]
-    public void CreateTable_CreatesTableWithExpectedProperties()
+    public void ManageTables_Create_CreatesTableWithExpectedProperties()
     {
         string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
         try
@@ -505,9 +505,9 @@ public class SpreadsheetMcpServerUnitTest
                 Columns = ["Hello", "World", "Value"],
             };
 
-            _tableService.CreateTable(tempFile, "Sheet1", table);
+            _tableService.ManageTables(tempFile, "Sheet1", "create", table: table);
 
-            List<SerializableTable> result = _tableService.GetTables(tempFile, "Sheet1");
+            List<SerializableTable> result = _tableService.ManageTables(tempFile, "Sheet1", "get");
 
             Assert.Single(result);
             Assert.Equal("SalesTable", result[0].Name);
@@ -523,15 +523,16 @@ public class SpreadsheetMcpServerUnitTest
     }
 
     [Fact]
-    public void DeleteTable_RemovesTable()
+    public void ManageTables_Delete_RemovesTable()
     {
         string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
         try
         {
-            _tableService.CreateTable(
+            _tableService.ManageTables(
                 tempFile,
                 "Sheet1",
-                new SerializableTable
+                "create",
+                table: new SerializableTable
                 {
                     Name = "ToDelete",
                     Reference = "A1:C1",
@@ -539,9 +540,9 @@ public class SpreadsheetMcpServerUnitTest
                 }
             );
 
-            _tableService.DeleteTable(tempFile, "Sheet1", "ToDelete");
+            _tableService.ManageTables(tempFile, "Sheet1", "delete", tableName: "ToDelete");
 
-            List<SerializableTable> result = _tableService.GetTables(tempFile, "Sheet1");
+            List<SerializableTable> result = _tableService.ManageTables(tempFile, "Sheet1", "get");
             Assert.Empty(result);
         }
         finally
@@ -551,13 +552,45 @@ public class SpreadsheetMcpServerUnitTest
     }
 
     [Fact]
-    public void GetTables_ReturnsEmptyWhenNoTables()
+    public void ManageTables_Get_ReturnsEmptyWhenNoTables()
     {
         string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
         try
         {
-            List<SerializableTable> result = _tableService.GetTables(tempFile, "Sheet1");
+            List<SerializableTable> result = _tableService.ManageTables(tempFile, "Sheet1", "get");
             Assert.Empty(result);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ManageTables_UnknownAction_Throws()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() =>
+                _tableService.ManageTables(tempFile, "Sheet1", "frobnicate")
+            );
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ManageTables_Delete_NonExistentTable_Throws()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() =>
+                _tableService.ManageTables(tempFile, "Sheet1", "delete", tableName: "Missing")
+            );
         }
         finally
         {
@@ -953,7 +986,7 @@ public class SpreadsheetMcpServerUnitTest
     }
 
     [Fact]
-    public void CreateTable_CreatesTableWithAutoFilterAndStyle()
+    public void ManageTables_Create_CreatesTableWithAutoFilterAndStyle()
     {
         string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
         try
@@ -967,7 +1000,7 @@ public class SpreadsheetMcpServerUnitTest
                 Columns = ["Hello", "World", "Value"],
             };
 
-            _tableService.CreateTable(tempFile, "Sheet1", table);
+            _tableService.ManageTables(tempFile, "Sheet1", "create", table: table);
 
             using var workbook = new XLWorkbook(tempFile);
             var worksheet = workbook.Worksheet("Sheet1");

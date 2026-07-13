@@ -8,18 +8,15 @@ namespace SpreadsheetMcpServer.Core.Services;
 public interface ITableService
 {
     /// <summary>
-    /// Returns all Excel tables defined on the specified worksheet.
+    /// Gets, creates, or deletes a table on the specified worksheet. 'action' must be
+    /// "get", "create", or "delete". 'table' is required for "create"; 'tableName' is
+    /// required for "delete". Returns the tables remaining on the sheet after the operation.
     /// </summary>
-    List<SerializableTable> GetTables(string spreadSheetPath, string sheetName);
-
-    /// <summary>
-    /// Creates an Excel table over the given range on the specified sheet.
-    /// The first row of the range must already contain header values.
-    /// </summary>
-    void CreateTable(string spreadSheetPath, string sheetName, SerializableTable tableInfo);
-
-    /// <summary>
-    /// Removes the named table from the specified sheet.
-    /// </summary>
-    void DeleteTable(string spreadSheetPath, string sheetName, string tableName);
+    List<SerializableTable> ManageTables(
+        string spreadSheetPath,
+        string sheetName,
+        string action,
+        string? tableName = null,
+        SerializableTable? table = null
+    );
 }
