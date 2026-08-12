@@ -12,6 +12,7 @@ public static class ToolEntry
     private static readonly ITableService _tableService = new TableService();
     private static readonly ISpreadsheetExportService _exportService = new SpreadsheetExportService();
     private static readonly IPictureService _pictureService = new PictureService();
+    private static readonly ICellFormatService _cellFormatService = new CellFormatService();
 
     [
         McpServerTool,
@@ -26,7 +27,7 @@ public static class ToolEntry
     [
         McpServerTool,
         Description(
-            "Get all worksheets from an Excel file, each with its name, used range, and the cell addresses of any pictures it contains. Prefix the spreadSheetPath with the path from GetWorkingDirectory."
+            "Get all worksheets from an Excel file, each with its name, used range, and the cell addresses of any pictures it contains."
         )
     ]
     public static List<SerializableSheet> GetAllWorksheets(string spreadSheetPath) =>
@@ -36,7 +37,6 @@ public static class ToolEntry
         McpServerTool,
         Description(
             "Create, delete, or rename a worksheet in an Excel file. "
-                + "Prefix the spreadSheetPath with the path from GetWorkingDirectory. "
                 + "'action' must be 'create', 'delete', or 'rename'. "
                 + "For 'create', a new empty worksheet named spreadSheetName is added. "
                 + "For 'delete', the worksheet named spreadSheetName is removed. "
@@ -56,7 +56,6 @@ public static class ToolEntry
         Description(
             "Read cells from a worksheet within the specified range. "
                 + "Prefer this tool over LoadRangeInMarkdownTable when you only need cell values and do not care about spatial layout — it omits empty cells entirely, making it more token-efficient for sparse sheets. "
-                + "Prefix the spreadSheetPath with the path from GetWorkingDirectory. "
                 + "The range parameter is required (e.g. 'A1:Q60'). "
                 + "If the sheet's used range is smaller than the requested range, only the used range is read. "
                 + "'Contents' is a two-column Markdown table ('| Address | Contents |') with one row per non-empty cell: the Address column is a cell address (or, for merged regions, the full range address such as 'AD629:AL638') and the Contents column is the cell text rendered as Markdown (bold → **text**, italic → *text*, strikethrough → ~~text~~). Rows are ordered by spreadsheet position (row first, then column); any literal '|' in a value is escaped as '\\|'. "
@@ -75,8 +74,7 @@ public static class ToolEntry
         McpServerTool,
         Description(
             "Read cells from a worksheet within the specified range, laid out as a visual grid Markdown table (the spatial counterpart to LoadRange). "
-                + "Use this tool instead of LoadRange when spatial layout matters — for example, when reading a form, understanding column alignment, or diagnosing merged cell structure. Prefer LoadRange when you only need values, as this tool preserves interior empty cells and is less token-efficient for sparse sheets. "
-                + "Prefix the spreadSheetPath with the path from GetWorkingDirectory. "
+                + "Use this tool instead of LoadRange when spatial layout matters — for example, when reading a form, understanding column alignment, or diagnosing merged cell structure."
                 + "The range parameter is required (e.g. 'A1:Q60'). "
                 + "If the sheet's used range is smaller than the requested range, only the used range is read. "
                 + "'Contents' is a grid Markdown table: the first header column is empty and the remaining headers are the column letters (A, B, C…); each body row is prefixed with its spreadsheet row number (1, 2, 3…), and each grid cell holds the cell value rendered as Markdown (bold → **text**, italic → *text*, strikethrough → ~~text~~). A literal '|' is escaped as '\\|' and newlines are collapsed to spaces. "
@@ -96,7 +94,6 @@ public static class ToolEntry
         McpServerTool,
         Description(
             "Search worksheets of a workbook for cells whose text contains any of the given strings. "
-                + "Prefix the spreadSheetPath with the path from GetWorkingDirectory. "
                 + "'searchStrings' is a list of substrings; a cell matches if its text contains any of them (case-insensitive). "
                 + "'spreadSheetList' restricts the search to the named worksheets; leave it empty to search every worksheet. "
                 + "Returns one entry per worksheet that has at least one match; sheets with no match are omitted. "
@@ -114,7 +111,6 @@ public static class ToolEntry
         McpServerTool,
         Description(
             "Write Markdown-formatted text into a worksheet — the inverse of LoadRange. "
-                + "Prefix the spreadSheetPath with the path from GetWorkingDirectory. "
                 + "Pass a sheet object with 'SheetName' and 'Contents', where 'Contents' is a two-column "
                 + "Markdown table ('| Address | Contents |', with a '| --- | --- |' separator row) and one "
                 + "row per cell. An Address is either a single cell ('A1') or a merged range address "
@@ -130,7 +126,6 @@ public static class ToolEntry
         McpServerTool,
         Description(
             "Get, create, or delete an Excel table on a worksheet. "
-                + "Prefix the spreadSheetPath with the path from GetWorkingDirectory. "
                 + "'action' must be 'get', 'create', or 'delete'. "
                 + "For 'get', all tables defined on sheetName are returned; tableName and table are ignored. "
                 + "For 'create', 'table' is required — it converts a cell range into a named Excel Table with auto-filter dropdowns, sortable headers, and optional row banding. "
@@ -153,7 +148,6 @@ public static class ToolEntry
         McpServerTool,
         Description(
             "Export a JSON array (or single object) to a new worksheet in an Excel file. "
-                + "Prefix the spreadSheetPath with the path from GetWorkingDirectory. "
                 + "Creates the file if it does not exist. Throws if a sheet with the same name already exists."
         )
     ]
@@ -164,7 +158,6 @@ public static class ToolEntry
         McpServerTool,
         Description(
             "Return the first picture whose anchor (top-left) cell falls within the given range, as an image the model can view directly. "
-                + "Prefix the spreadSheetPath with the path from GetWorkingDirectory. "
                 + "The range parameter is required (e.g. 'A1:C5'). "
                 + "'First' follows the worksheet's picture order. "
                 + "Returns null when no picture is anchored within the range."
@@ -182,7 +175,6 @@ public static class ToolEntry
         McpServerTool,
         Description(
             "Insert one or more pictures from image files into a worksheet. The inverse of GetPictures. "
-                + "Prefix the spreadSheetPath with the path from GetWorkingDirectory. "
                 + "'pictures' is a list; each item has 'picturePath' (the source image file, resolved relative to GetWorkingDirectory like spreadSheetPath), "
                 + "'targetSheet' (the worksheet to insert into), 'topLeftAddress' (the anchor cell, e.g. 'B2'), "
                 + "and optional 'width'/'height' in pixels (the original image size is used when a dimension is omitted). "
@@ -192,4 +184,26 @@ public static class ToolEntry
     ]
     public static string PastePictures(string spreadSheetPath, List<PicturePasteSpec> pictures) =>
         _pictureService.PastePictures(spreadSheetPath, pictures);
+
+    [
+        McpServerTool,
+        Description(
+            "Apply formatting to cells or ranges in a worksheet. "
+                + "'formats' is a list of CellFormatSpec objects, each specifying an address and formatting options. "
+                + "Address can be a single cell ('A1'), a range ('A1:B5'), or include sheet name ('Sheet1!A1:B5'). "
+                + "Supported formatting: "
+                + "- Font: bold, italic, underline, strikethrough, fontColor (hex), fontName, fontSize; "
+                + "- Fill: backgroundColor (hex); "
+                + "- Alignment: horizontalAlignment ('Left', 'Center', 'Right', 'Justify'), verticalAlignment ('Top', 'Center', 'Bottom'), wrapText; "
+                + "- Borders: topBorder, bottomBorder, leftBorder, rightBorder (each with style and color); "
+                + "- Number format: numberFormat (e.g., '0.00', 'yyyy-mm-dd', '#,##0'); "
+                + "- Dimensions: height (row height in points), width (column width in characters). "
+                + "Returns a confirmation message."
+        )
+    ]
+    public static string ApplyCellFormatting(string spreadSheetPath, List<CellFormatSpec> formats)
+    {
+        _cellFormatService.ApplyCellFormatting(spreadSheetPath, formats);
+        return $"Applied formatting to {formats.Count} cell(s)/range(s).";
+    }
 }

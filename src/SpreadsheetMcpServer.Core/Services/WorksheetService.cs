@@ -46,7 +46,8 @@ public class WorksheetService : IWorksheetService
     {
         try
         {
-            using var workbook = new XLWorkbook(spreadSheetPath);
+            // Create new workbook if file doesn't exist, otherwise open existing
+            using var workbook = File.Exists(spreadSheetPath) ? new XLWorkbook(spreadSheetPath) : new XLWorkbook();
             string message;
             switch (action.Trim().ToLowerInvariant())
             {
