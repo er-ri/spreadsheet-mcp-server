@@ -11,6 +11,7 @@ public class SpreadsheetMcpServerUnitTest
     private readonly ITableService _tableService = new TableService();
     private readonly ISpreadsheetExportService _exportService = new SpreadsheetExportService();
     private readonly IPictureService _pictureService = new PictureService();
+    private readonly ICellFormatService _cellFormatService = new CellFormatService();
 
     /// <summary>
     /// Parses a two-column Address/Contents Markdown table (the shape of
@@ -1663,6 +1664,317 @@ public class SpreadsheetMcpServerUnitTest
             );
 
             Assert.Equal(2, results.Count);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    /// <summary>
+    /// Finds the single entry addressed <paramref name="address"/>, failing the test when absent.
+    /// </summary>
+    private static CellFormatSpec Entry(List<CellFormatSpec> specs, string address)
+    {
+        var match = specs.SingleOrDefault(f => f.Address == address);
+        Assert.True(match != null, $"No entry for '{address}'. Got: {string.Join(", ", specs.Select(f => f.Address))}");
+        return match!;
+    }
+
+    [Fact]
+    public void ReadCellFormatting_OmitsDefaultStyledCells()
+    {
+        // CreateSimpleWorkbook writes values but never touches styling.
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            var result = _cellFormatService.ReadCellFormatting(tempFile, "Sheet1", "A1:Q60");
+
+            Assert.Empty(result);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ReadCellFormatting_CoalescesAdjacentIdenticalCellsIntoRange()
+    {
+        string tempFile = TestFixtureFactory.CreateStyledWorkbookForFormatReading("Sheet1");
+        try
+        {
+            var result = _cellFormatService.ReadCellFormatting(tempFile, "Sheet1", "A1:Q60");
+
+            // The header run is one entry, not four; the number column is one entry, not nine.
+            var header = Entry(result, "A1:D1");
+            Assert.True(header.Bold);
+            Assert.Equal("#FFFF00", header.BackgroundColor);
+            Assert.Equal("Center", header.HorizontalAlignment);
+
+            var numbers = Entry(result, "A2:A10");
+            Assert.Equal("#,##0", numbers.NumberFormat);
+            Assert.Equal("Thin", numbers.TopBorder?.Style);
+            Assert.Equal("Thin", numbers.RightBorder?.Style);
+
+            // A cell styled differently from its neighbours stays on its own.
+            Assert.True(Entry(result, "B5").Italic);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ReadCellFormatting_ReportsRowHeightAndColumnWidth()
+    {
+        string tempFile = TestFixtureFactory.CreateStyledWorkbookForFormatReading("Sheet1");
+        try
+        {
+            var result = _cellFormatService.ReadCellFormatting(tempFile, "Sheet1", "A1:Q60");
+
+            // Row 1's height is addressed to the first column of the read range, column C's width to
+            // the first row — the cells ApplyCellFormatting resolves back to that row/column.
+            var height = result.Single(f => f.Height.HasValue);
+            Assert.Equal("A1", height.Address);
+            Assert.Equal(30, height.Height!.Value, 3);
+
+            var width = result.Single(f => f.Width.HasValue);
+            Assert.Equal("C1", width.Address);
+            Assert.Equal(25, width.Width!.Value, 3);
+
+            // Dimension entries come before the style entries.
+            Assert.True(result.IndexOf(height) < result.FindIndex(f => f.Address == "A1:D1"));
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ReadCellFormatting_ReadsFontFillAlignment()
+    {
+        // A1 = "Styled": bold, italic, strikethrough, single underline, red font, yellow fill,
+        // centered, wrap-text.
+        string tempFile = TestFixtureFactory.CreateFormattedWorkbook("Sheet1");
+        try
+        {
+            var result = _cellFormatService.ReadCellFormatting(tempFile, "Sheet1", "A1:Q60");
+
+            var a1 = Entry(result, "A1");
+            Assert.True(a1.Bold);
+            Assert.True(a1.Italic);
+            Assert.True(a1.Strikethrough);
+            Assert.True(a1.Underline);
+            Assert.Equal("#FF0000", a1.FontColor);
+            Assert.Equal("#FFFF00", a1.BackgroundColor);
+            Assert.Equal("Center", a1.HorizontalAlignment);
+            Assert.True(a1.WrapText);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ReadCellFormatting_ReadsStylingOfCellWithNoContents()
+    {
+        // A cell can carry styling and no value at all — a colored banner row, a bordered box. The
+        // used range must be computed from formats as well as contents, or these vanish.
+        string tempFile = Path.Combine(Path.GetTempPath(), $"fixture_{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            using (var workbook = new XLWorkbook())
+            {
+                var ws = workbook.Worksheets.Add("Sheet1");
+                ws.Cell("A1").Value = "Anchor";
+                ws.Cell("C3").Style.Fill.BackgroundColor = XLColor.Cyan; // styled, but empty
+                workbook.SaveAs(tempFile);
+            }
+
+            var result = _cellFormatService.ReadCellFormatting(tempFile, "Sheet1", "A1:Q60");
+
+            Assert.Equal("#00FFFF", Entry(result, "C3").BackgroundColor);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ReadCellFormatting_RoundTripsThroughApplyCellFormatting()
+    {
+        string source = TestFixtureFactory.CreateStyledWorkbookForFormatReading("Sheet1");
+        string target = Path.Combine(Path.GetTempPath(), $"fixture_{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            using (var workbook = new XLWorkbook())
+            {
+                workbook.Worksheets.Add("Sheet1");
+                workbook.SaveAs(target);
+            }
+
+            var original = _cellFormatService.ReadCellFormatting(source, "Sheet1", "A1:Q60");
+            Assert.NotEmpty(original);
+
+            // The read output is fed back verbatim — this is the contract the tool exists for.
+            _cellFormatService.ApplyCellFormatting(target, original);
+
+            var reapplied = _cellFormatService.ReadCellFormatting(target, "Sheet1", "A1:Q60");
+
+            Assert.Equal(
+                original.Select(f => f.Address).OrderBy(a => a, StringComparer.Ordinal),
+                reapplied.Select(f => f.Address).OrderBy(a => a, StringComparer.Ordinal)
+            );
+
+            foreach (var before in original)
+            {
+                var after = Entry(reapplied, before.Address);
+                Assert.Equal(before.Bold, after.Bold);
+                Assert.Equal(before.Italic, after.Italic);
+                Assert.Equal(before.Underline, after.Underline);
+                Assert.Equal(before.Strikethrough, after.Strikethrough);
+                Assert.Equal(before.FontColor, after.FontColor);
+                Assert.Equal(before.FontName, after.FontName);
+                Assert.Equal(before.FontSize, after.FontSize);
+                Assert.Equal(before.BackgroundColor, after.BackgroundColor);
+                Assert.Equal(before.HorizontalAlignment, after.HorizontalAlignment);
+                Assert.Equal(before.VerticalAlignment, after.VerticalAlignment);
+                Assert.Equal(before.WrapText, after.WrapText);
+                Assert.Equal(before.NumberFormat, after.NumberFormat);
+                Assert.Equal(before.TopBorder?.Style, after.TopBorder?.Style);
+                Assert.Equal(before.BottomBorder?.Style, after.BottomBorder?.Style);
+                Assert.Equal(before.LeftBorder?.Style, after.LeftBorder?.Style);
+                Assert.Equal(before.RightBorder?.Style, after.RightBorder?.Style);
+                Assert.Equal(before.Height, after.Height);
+                Assert.Equal(before.Width, after.Width);
+            }
+        }
+        finally
+        {
+            File.Delete(source);
+            File.Delete(target);
+        }
+    }
+
+    [Fact]
+    public void ReadCellFormatting_TruncateCapsEntryCount()
+    {
+        string tempFile = TestFixtureFactory.CreateStyledWorkbookForFormatReading("Sheet1");
+        try
+        {
+            var all = _cellFormatService.ReadCellFormatting(tempFile, "Sheet1", "A1:Q60", truncate: 0);
+            Assert.True(all.Count > 2);
+
+            var capped = _cellFormatService.ReadCellFormatting(tempFile, "Sheet1", "A1:Q60", truncate: 2);
+
+            Assert.Equal(2, capped.Count);
+            Assert.Equal(all.Take(2).Select(f => f.Address), capped.Select(f => f.Address));
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ReadCellFormatting_RangeSmallerThanUsedRange_ReadsOnlyRequestedRange()
+    {
+        string tempFile = TestFixtureFactory.CreateStyledWorkbookForFormatReading("Sheet1");
+        try
+        {
+            var result = _cellFormatService.ReadCellFormatting(tempFile, "Sheet1", "A1:B1", truncate: 0);
+
+            // The header run is clipped to the requested range, and the number column is outside it.
+            Assert.Contains(result, f => f.Address == "A1:B1");
+            Assert.DoesNotContain(result, f => f.Address == "A2:A10");
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ReadCellFormatting_UnknownSheet_Throws()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() =>
+                _cellFormatService.ReadCellFormatting(tempFile, "NoSuchSheet", "A1:Q60")
+            );
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ApplyCellFormatting_BorderStyleWithoutExplicitCase_RoundTrips()
+    {
+        // MediumDashDotDot has no hand-written case in ParseBorderStyle; it must still survive being
+        // read and applied back, rather than degrading to no border.
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            _cellFormatService.ApplyCellFormatting(
+                tempFile,
+                [
+                    new CellFormatSpec
+                    {
+                        Address = "A1",
+                        TopBorder = new BorderSpec { Style = "MediumDashDotDot" },
+                    },
+                ]
+            );
+
+            var result = _cellFormatService.ReadCellFormatting(tempFile, "Sheet1", "A1:Q60");
+
+            Assert.Equal("MediumDashDotDot", Entry(result, "A1").TopBorder?.Style);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ApplyCellFormatting_AppliesFontFillAlignmentAndDimensions()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            _cellFormatService.ApplyCellFormatting(
+                tempFile,
+                [
+                    new CellFormatSpec
+                    {
+                        Address = "A1:B2",
+                        Bold = true,
+                        FontColor = "#FF0000",
+                        BackgroundColor = "#00FF00",
+                        HorizontalAlignment = "Right",
+                        NumberFormat = "0.00",
+                    },
+                    new CellFormatSpec { Address = "A1", Height = 40 },
+                ]
+            );
+
+            using var workbook = new XLWorkbook(tempFile);
+            var ws = workbook.Worksheet("Sheet1");
+
+            Assert.True(ws.Cell("B2").Style.Font.Bold);
+            Assert.Equal(XLColor.FromHtml("#FF0000"), ws.Cell("A1").Style.Font.FontColor);
+            Assert.Equal(XLColor.FromHtml("#00FF00"), ws.Cell("A1").Style.Fill.BackgroundColor);
+            Assert.Equal(XLAlignmentHorizontalValues.Right, ws.Cell("A1").Style.Alignment.Horizontal);
+            Assert.Equal("0.00", ws.Cell("A1").Style.NumberFormat.Format);
+            Assert.Equal(40, ws.Row(1).Height, 3);
         }
         finally
         {

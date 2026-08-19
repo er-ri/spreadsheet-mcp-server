@@ -206,4 +206,25 @@ public static class ToolEntry
         _cellFormatService.ApplyCellFormatting(spreadSheetPath, formats);
         return $"Applied formatting to {formats.Count} cell(s)/range(s).";
     }
+
+    [
+        McpServerTool,
+        Description(
+            "Read the formatting of cells in a worksheet — the inverse of ApplyCellFormatting. "
+                + "The returned list can be passed straight back as ApplyCellFormatting's 'formats' argument to reproduce the styling elsewhere. "
+                + "The range parameter is required (e.g. 'A1:Q60'); if the sheet's used range is smaller, only the used range is read. "
+                + "Cells whose styling matches the workbook default are omitted, and each entry carries only the properties that actually differ — so an unstyled sheet returns an empty list. "
+                + "Adjacent cells sharing identical styling are reported as one range entry (e.g. 'A1:D1' or 'A2:A10') rather than one entry per cell. "
+                + "Row heights and column widths that differ from the sheet default come first, as entries carrying only 'height' or 'width'. "
+                + "Addresses have no sheet prefix, so re-apply them with the same spreadSheetName; prefix an address with 'Sheet1!' to target a different worksheet. "
+                + "Use 'truncate' to cap how many entries are returned (entry count, not characters); pass 0 or less for all of them. "
+                + "Fidelity limits: a double or accounting underline is reported as underline true, theme-based colors are omitted (they have no fixed hex value), and number formats stored as a built-in format id are omitted."
+        )
+    ]
+    public static List<CellFormatSpec> ReadCellFormatting(
+        string spreadSheetPath,
+        string spreadSheetName,
+        string range,
+        int truncate = 200
+    ) => _cellFormatService.ReadCellFormatting(spreadSheetPath, spreadSheetName, range, truncate);
 }

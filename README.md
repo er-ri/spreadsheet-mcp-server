@@ -30,11 +30,18 @@ Add the configuration snippet to your MCP client's settings file (e.g. `.mcp.jso
 | Tool | What it does |
 |------|-------------|
 | `GetWorkingDirectory` | Returns the base folder the server uses to resolve file paths. Call this first if you're unsure of the path. |
-| `GetAllWorksheets` | Lists all sheet names in a workbook, each with its used range. |
-| `LoadRange` | Reads non-empty cells from a worksheet within a range (default `A1:Q60`). Returns address, value, data type, formula, formatting, and merged-cell info. Accepts a `threshold` to cap JSON output size. |
-| `UpdateRange` | Writes values, formulas, or formatting to one or more cells (bare cell refs, e.g. `A1`). Supports typed values (Number, Boolean, Date, text), formulas, and full cell formatting. Set both Value and Formula to null to clear a cell. |
-| `ManageTables` | Gets, creates, or deletes an Excel table on a worksheet. For 'create', converts a cell range into a named Excel table with auto-filter, sortable headers, and optional row banding — write data rows with `UpdateRange` first, then call this to add headers and table formatting. |
-| `ExportJsonToSpreadSheet` | Exports a JSON array (or single object) to a new worksheet in an Excel file. Creates the file if it does not exist; throws if a sheet with that name already exists. |
+| `GetAllWorksheets` | Lists every worksheet in a workbook with its name, used range, and the anchor cells of any pictures it contains. |
+| `ManageWorksheet` | Creates, deletes, or renames a worksheet. |
+| `LoadRange` | Reads non-empty cells within a range as a two-column `Address \| Contents` Markdown table. Use it when you need values but not layout — empty cells are skipped entirely. |
+| `LoadRangeInMarkdownTable` | Reads a range as a visual grid Markdown table (row numbers down the side, column letters across the top). Use it when spatial layout matters. |
+| `FindStringsInSheets` | Searches worksheets for cells containing any of the given substrings and returns the matches per sheet. |
+| `UpdateRange` | Writes a Markdown `Address \| Contents` table back into a worksheet — the inverse of `LoadRange`. Range addresses merge the region; `**bold**`, `*italic*` and `~~strike~~` become cell formatting. |
+| `ManageTables` | Gets, creates, or deletes an Excel table on a worksheet. For 'create', converts a range into a named table with auto-filter and optional banding — write the data rows with `UpdateRange` first. |
+| `ExportJsonToSpreadSheet` | Exports a JSON array (or single object) to a new worksheet. Creates the file if it does not exist; throws if a sheet with that name already exists. |
+| `GetPictures` | Returns the first picture anchored within a range as an image the model can view directly. |
+| `PastePictures` | Inserts one or more image files into a worksheet at given anchor cells, with optional pixel dimensions. |
+| `ApplyCellFormatting` | Applies fonts, colors, alignment, borders, number formats, and row/column sizes to cells or ranges. |
+| `ReadCellFormatting` | Reads a worksheet's styling back out in the same shape `ApplyCellFormatting` accepts, so styling can be inspected or copied. Default-styled cells are omitted and identically-styled neighbours are reported as one range. |
 
 ## License
 

@@ -1,6 +1,4 @@
-using System.IO.Compression;
 using System.Text;
-using System.Xml.Linq;
 using ClosedXML.Excel;
 using SpreadsheetMcpServer.Core.Helpers;
 using SpreadsheetMcpServer.Core.Models;
@@ -12,45 +10,6 @@ namespace SpreadsheetMcpServer.Core.Services;
 /// </summary>
 public class CellService : ICellService
 {
-    // ClosedXML throws when an xlsx shared-strings part contains phonetic run (<rPh>)
-    // elements that are out-of-order or overlapping. Strip all <rPh> nodes before loading.
-    private static Stream SanitizePhoneticRuns(string path)
-    {
-        var ms = new MemoryStream();
-        using (var src = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
-            src.CopyTo(ms);
-
-        using (var zip = new ZipArchive(ms, ZipArchiveMode.Update, leaveOpen: true))
-        {
-            var sharedStrings = zip.GetEntry("xl/sharedStrings.xml");
-            if (sharedStrings != null)
-            {
-                XDocument doc;
-                using (var entryStream = sharedStrings.Open())
-                    doc = XDocument.Load(entryStream);
-
-                XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
-                bool removed = false;
-                foreach (var rPh in doc.Descendants(ns + "rPh").ToList())
-                {
-                    rPh.Remove();
-                    removed = true;
-                }
-
-                if (removed)
-                {
-                    sharedStrings.Delete();
-                    var newEntry = zip.CreateEntry("xl/sharedStrings.xml");
-                    using var writer = new StreamWriter(newEntry.Open());
-                    writer.Write(doc.ToString());
-                }
-            }
-        }
-
-        ms.Position = 0;
-        return ms;
-    }
-
     /// <summary>
     /// Reads non-empty cells from the specified worksheet within the given range and returns them as a
     /// two-column Address/Contents Markdown table (see <see cref="MarkdownSheet.Contents"/>). If the
@@ -69,13 +28,13 @@ public class CellService : ICellService
     {
         try
         {
-            using var sanitized = SanitizePhoneticRuns(spreadSheetPath);
+            using var sanitized = WorkbookReader.SanitizePhoneticRuns(spreadSheetPath);
             using var workbook = new XLWorkbook(sanitized);
             var worksheet = workbook.Worksheet(spreadSheetName);
             var contents = new Dictionary<string, string>();
 
             // Determine the effective read range: intersect the requested range with the used range.
-            var bounds = ComputeEffectiveRange(worksheet, range);
+            var bounds = WorkbookReader.ComputeEffectiveRange(worksheet, range);
             if (bounds == null)
                 return new MarkdownSheet
                 {
@@ -177,7 +136,7 @@ public class CellService : ICellService
 
         try
         {
-            using var sanitized = SanitizePhoneticRuns(spreadSheetPath);
+            using var sanitized = WorkbookReader.SanitizePhoneticRuns(spreadSheetPath);
             using var workbook = new XLWorkbook(sanitized);
 
             var results = new List<MarkdownSheet>();
@@ -282,11 +241,11 @@ public class CellService : ICellService
     {
         try
         {
-            using var sanitized = SanitizePhoneticRuns(spreadSheetPath);
+            using var sanitized = WorkbookReader.SanitizePhoneticRuns(spreadSheetPath);
             using var workbook = new XLWorkbook(sanitized);
             var worksheet = workbook.Worksheet(spreadSheetName);
 
-            var bounds = ComputeEffectiveRange(worksheet, range);
+            var bounds = WorkbookReader.ComputeEffectiveRange(worksheet, range);
             if (bounds == null)
                 return new MarkdownSheet
                 {
@@ -370,34 +329,6 @@ public class CellService : ICellService
         {
             throw new InvalidOperationException($"Error reading Excel file: {ex.Message}", ex);
         }
-    }
-
-    /// <summary>
-    /// Intersects the requested <paramref name="range"/> with the worksheet's used range and returns the
-    /// resulting (firstRow, firstCol, lastRow, lastCol) bounds, or <c>null</c> when the sheet has no used
-    /// range or the intersection is empty. Shared by <see cref="LoadRange"/> and
-    /// <see cref="LoadRangeInMarkdownTable"/>.
-    /// </summary>
-    private static (int FirstRow, int FirstCol, int LastRow, int LastCol)? ComputeEffectiveRange(
-        IXLWorksheet worksheet,
-        string range
-    )
-    {
-        var requestedRange = worksheet.Range(range);
-        var usedRangeAddress = worksheet.RangeUsed()?.RangeAddress;
-        if (usedRangeAddress == null)
-            return null;
-
-        var usedRange = worksheet.Range(usedRangeAddress.ToStringRelative(false));
-        int firstRow = Math.Max(requestedRange.FirstRow().RowNumber(), usedRange.FirstRow().RowNumber());
-        int firstCol = Math.Max(requestedRange.FirstColumn().ColumnNumber(), usedRange.FirstColumn().ColumnNumber());
-        int lastRow = Math.Min(requestedRange.LastRow().RowNumber(), usedRange.LastRow().RowNumber());
-        int lastCol = Math.Min(requestedRange.LastColumn().ColumnNumber(), usedRange.LastColumn().ColumnNumber());
-
-        if (firstRow > lastRow || firstCol > lastCol)
-            return null;
-
-        return (firstRow, firstCol, lastRow, lastCol);
     }
 
     /// <summary>
