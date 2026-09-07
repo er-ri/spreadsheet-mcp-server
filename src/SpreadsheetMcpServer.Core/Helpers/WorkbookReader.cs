@@ -50,6 +50,21 @@ public static class WorkbookReader
     }
 
     /// <summary>
+    /// Returns the worksheet named <paramref name="name"/>, throwing a uniform
+    /// <see cref="InvalidOperationException"/> when it does not exist. ClosedXML's
+    /// <c>Worksheet(string)</c> throws <see cref="ArgumentException"/> instead, which the services'
+    /// catch filters deliberately let through — so every lookup goes through here to keep a missing
+    /// sheet reported as an expected condition with one message.
+    /// </summary>
+    public static IXLWorksheet GetWorksheet(IXLWorkbook workbook, string name)
+    {
+        if (!workbook.TryGetWorksheet(name, out var worksheet))
+            throw new InvalidOperationException($"No worksheet named '{name}' was found.");
+
+        return worksheet;
+    }
+
+    /// <summary>
     /// Intersects the requested <paramref name="range"/> with the worksheet's used range and returns the
     /// resulting (firstRow, firstCol, lastRow, lastCol) bounds, or <c>null</c> when the sheet has no used
     /// range or the intersection is empty. <paramref name="options"/> selects what counts as "used":

@@ -56,7 +56,7 @@ public class CellFormatService : ICellFormatService
 
             workbook.Save();
         }
-        catch (Exception ex) when (ex is not InvalidOperationException)
+        catch (Exception ex) when (ex is not InvalidOperationException and not ArgumentException)
         {
             throw new InvalidOperationException($"Error applying cell formatting: {ex.Message}", ex);
         }
@@ -85,7 +85,7 @@ public class CellFormatService : ICellFormatService
         {
             using var sanitized = WorkbookReader.SanitizePhoneticRuns(spreadSheetPath);
             using var workbook = new XLWorkbook(sanitized);
-            var worksheet = workbook.Worksheet(spreadSheetName);
+            var worksheet = WorkbookReader.GetWorksheet(workbook, spreadSheetName);
 
             // Include cells that carry only formatting — a colored banner row or a bordered box has no
             // contents but is exactly what this tool exists to report.
@@ -121,7 +121,7 @@ public class CellFormatService : ICellFormatService
 
             return results;
         }
-        catch (Exception ex) when (ex is not InvalidOperationException)
+        catch (Exception ex) when (ex is not InvalidOperationException and not ArgumentException)
         {
             throw new InvalidOperationException($"Error reading cell formatting: {ex.Message}", ex);
         }

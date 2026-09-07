@@ -3,5 +3,12 @@
         <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <EnableNETAnalyzers>true</EnableNETAnalyzers>
+        <!-- Pinned rather than "latest": global.json rolls the SDK forward to the latest minor, and
+             "latest" would pick up whatever analyzers that SDK ships. With TreatWarningsAsErrors on,
+             a newer runner could then fail the build on an unmodified commit. Bump this deliberately.
+             The "-Recommended" suffix carries the analysis mode, so AnalysisMode is not needed. -->
+        <AnalysisLevel>10.0-Recommended</AnalysisLevel>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
 </Project>

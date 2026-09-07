@@ -177,3 +177,15 @@ indent_size = 2
 
 [*.md]
 trim_trailing_whitespace = false
+
+# Test projects: xUnit test method names conventionally use underscores to separate
+# What_ShouldHappen_When, and fields typed as the service interface are intentional.
+[tests/**/*.cs]
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.CA1859.severity = none
+
+# The composition root deliberately holds the services through Core's interfaces, so that those
+# interfaces remain the seam Core is consumed through instead of existing only for the tests.
+# Six static singletons; CA1859's devirtualization win does not pay for losing the abstraction.
+[src/SpreadsheetMcpServer/ToolEntry.cs]
+dotnet_diagnostic.CA1859.severity = none

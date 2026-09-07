@@ -1,12 +1,20 @@
 using System.ComponentModel;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using SpreadsheetMcpServer.Core.Helpers;
 using SpreadsheetMcpServer.Core.Models;
 using SpreadsheetMcpServer.Core.Services;
+
+namespace SpreadsheetMcpServer;
 
 [McpServerToolType]
 public static class ToolEntry
 {
+    // This is the composition root: it is the one place that names the concrete services, and it
+    // holds them through Core's interfaces so those interfaces stay the seam Core is consumed
+    // through rather than existing only for the test project. CA1859 (prefer concrete types) is
+    // suppressed for this file in .editorconfig — these are six static singletons, so there is no
+    // devirtualization worth trading the abstraction for.
     private static readonly IWorksheetService _worksheetService = new WorksheetService();
     private static readonly ICellService _cellService = new CellService();
     private static readonly ITableService _tableService = new TableService();
@@ -21,8 +29,7 @@ public static class ToolEntry
                 + "IMPORTANT: Call this first before using any other tool to resolve relative file names to absolute paths."
         )
     ]
-    public static string GetWorkingDirectory() =>
-        Environment.GetEnvironmentVariable("SPREADSHEET_BASE_PATH") ?? Directory.GetCurrentDirectory();
+    public static string GetWorkingDirectory() => PathResolver.GetWorkingDirectory();
 
     [
         McpServerTool,
@@ -31,7 +38,7 @@ public static class ToolEntry
         )
     ]
     public static List<SerializableSheet> GetAllWorksheets(string spreadSheetPath) =>
-        _worksheetService.GetAllWorksheets(spreadSheetPath);
+        _worksheetService.GetAllWorksheets(PathResolver.Resolve(spreadSheetPath));
 
     [
         McpServerTool,
@@ -49,7 +56,8 @@ public static class ToolEntry
         string spreadSheetName,
         string action,
         string? newSheetName = null
-    ) => _worksheetService.ManageWorksheet(spreadSheetPath, spreadSheetName, action, newSheetName);
+    ) =>
+        _worksheetService.ManageWorksheet(PathResolver.Resolve(spreadSheetPath), spreadSheetName, action, newSheetName);
 
     [
         McpServerTool,
@@ -68,7 +76,7 @@ public static class ToolEntry
         string spreadSheetName,
         string range,
         int truncate = 10000
-    ) => _cellService.LoadRange(spreadSheetPath, spreadSheetName, range, truncate);
+    ) => _cellService.LoadRange(PathResolver.Resolve(spreadSheetPath), spreadSheetName, range, truncate);
 
     [
         McpServerTool,
@@ -88,7 +96,7 @@ public static class ToolEntry
         string spreadSheetName,
         string range,
         int truncate = 10000
-    ) => _cellService.LoadRangeInMarkdownTable(spreadSheetPath, spreadSheetName, range, truncate);
+    ) => _cellService.LoadRangeInMarkdownTable(PathResolver.Resolve(spreadSheetPath), spreadSheetName, range, truncate);
 
     [
         McpServerTool,
@@ -105,7 +113,7 @@ public static class ToolEntry
         List<string> searchStrings,
         string spreadSheetPath,
         List<string>? spreadSheetList = null
-    ) => _cellService.FindStringsInSheets(searchStrings, spreadSheetPath, spreadSheetList);
+    ) => _cellService.FindStringsInSheets(searchStrings, PathResolver.Resolve(spreadSheetPath), spreadSheetList);
 
     [
         McpServerTool,
@@ -120,7 +128,24 @@ public static class ToolEntry
         )
     ]
     public static void UpdateRange(string spreadSheetPath, MarkdownSheet sheet) =>
-        _cellService.UpdateRange(spreadSheetPath, sheet);
+        _cellService.UpdateRange(PathResolver.Resolve(spreadSheetPath), sheet);
+
+    [
+        McpServerTool,
+        Description(
+            "Remove the contents of a range of cells in a worksheet — the inverse of UpdateRange. "
+                + "'range' is the area to clear (e.g. 'A1:Q60'); if it is larger than the sheet's used range, only the used range is cleared. "
+                + "Set 'clearFormats' to true to wipe the cells completely instead: styling, borders and number formats, but also merged regions, data validation, conditional formats and comments. "
+                + "By default only the cell values are removed and everything else is left in place. "
+                + "Returns a confirmation message."
+        )
+    ]
+    public static string ClearRange(
+        string spreadSheetPath,
+        string spreadSheetName,
+        string range,
+        bool clearFormats = false
+    ) => _cellService.ClearRange(PathResolver.Resolve(spreadSheetPath), spreadSheetName, range, clearFormats);
 
     [
         McpServerTool,
@@ -142,7 +167,7 @@ public static class ToolEntry
         string action,
         string? tableName = null,
         SerializableTable? table = null
-    ) => _tableService.ManageTables(spreadSheetPath, sheetName, action, tableName, table);
+    ) => _tableService.ManageTables(PathResolver.Resolve(spreadSheetPath), sheetName, action, tableName, table);
 
     [
         McpServerTool,
@@ -152,7 +177,7 @@ public static class ToolEntry
         )
     ]
     public static void ExportJsonToSpreadSheet(string spreadSheetPath, string sheetName, string json) =>
-        _exportService.ExportJsonArrayToSpreadSheet(spreadSheetPath, sheetName, json);
+        _exportService.ExportJsonArrayToSpreadSheet(PathResolver.Resolve(spreadSheetPath), sheetName, json);
 
     [
         McpServerTool,
@@ -165,7 +190,11 @@ public static class ToolEntry
     ]
     public static ImageContentBlock? GetPictures(string spreadSheetPath, string spreadSheetName, string range)
     {
-        var picture = _pictureService.GetFirstPictureInRange(spreadSheetPath, spreadSheetName, range);
+        var picture = _pictureService.GetFirstPictureInRange(
+            PathResolver.Resolve(spreadSheetPath),
+            spreadSheetName,
+            range
+        );
         return picture is null
             ? null
             : new ImageContentBlock { Data = Convert.FromBase64String(picture.Base64), MimeType = picture.MimeType };
@@ -183,7 +212,7 @@ public static class ToolEntry
         )
     ]
     public static string PastePictures(string spreadSheetPath, List<PicturePasteSpec> pictures) =>
-        _pictureService.PastePictures(spreadSheetPath, pictures);
+        _pictureService.PastePictures(PathResolver.Resolve(spreadSheetPath), pictures);
 
     [
         McpServerTool,
@@ -203,7 +232,7 @@ public static class ToolEntry
     ]
     public static string ApplyCellFormatting(string spreadSheetPath, List<CellFormatSpec> formats)
     {
-        _cellFormatService.ApplyCellFormatting(spreadSheetPath, formats);
+        _cellFormatService.ApplyCellFormatting(PathResolver.Resolve(spreadSheetPath), formats);
         return $"Applied formatting to {formats.Count} cell(s)/range(s).";
     }
 
@@ -226,5 +255,5 @@ public static class ToolEntry
         string spreadSheetName,
         string range,
         int truncate = 200
-    ) => _cellFormatService.ReadCellFormatting(spreadSheetPath, spreadSheetName, range, truncate);
+    ) => _cellFormatService.ReadCellFormatting(PathResolver.Resolve(spreadSheetPath), spreadSheetName, range, truncate);
 }

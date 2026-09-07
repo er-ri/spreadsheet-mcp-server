@@ -19,5 +19,9 @@
 
     <ItemGroup>
         <ProjectReference Include="..\..\src\SpreadsheetMcpServer.Core\SpreadsheetMcpServer.Core.csproj" />
+        <!-- The Host is referenced so ToolEntryPathSandboxTests can assert that every MCP tool
+             actually routes its path through PathResolver. The sandbox is applied at the tool
+             boundary, so testing Core alone cannot see it. -->
+        <ProjectReference Include="..\..\src\SpreadsheetMcpServer\SpreadsheetMcpServer.csproj" />
     </ItemGroup>
 </Project>
