@@ -2415,4 +2415,275 @@ public class SpreadsheetMcpServerUnitTest
             Directory.Delete(outsideDir, recursive: true);
         }
     }
+
+    [Fact]
+    public void ApplyCellFormatting_ColonQualifiedColumnAndRow_SetsWholeColumnAndRow()
+    {
+        // "A:A"/"1:1" are ClosedXML's own whole-column/whole-row shorthand and must resolve
+        // correctly through the unconditional worksheet.Range(address) resolution path.
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            _cellFormatService.ApplyCellFormatting(
+                tempFile,
+                [
+                    new CellFormatSpec { Address = "A:A", Width = 26 },
+                    new CellFormatSpec { Address = "1:1", Height = 40 },
+                ]
+            );
+
+            using var workbook = new XLWorkbook(tempFile);
+            var ws = workbook.Worksheet("Sheet1");
+
+            Assert.Equal(26, ws.Column("A").Width, 3);
+            Assert.Equal(40, ws.Row(1).Height, 3);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ApplyCellFormatting_BareColumnAddress_ThrowsInsteadOfSilentlyNoOp()
+    {
+        // The original bug: a bare "A" (no colon) is not a valid ClosedXML address and used to be
+        // silently swallowed, applying to nothing. It must now surface as a clear, loud failure.
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            Assert.ThrowsAny<Exception>(() =>
+                _cellFormatService.ApplyCellFormatting(tempFile, [new CellFormatSpec { Address = "A", Width = 26 }])
+            );
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void UpdateRange_BareColumnAddress_ThrowsClearErrorInsteadOfNullReference()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            var sheet = new MarkdownSheet { SheetName = "Sheet1", Contents = BuildContents(("A", "value")) };
+
+            // A bare column address has no single anchor cell to write a value into — ClosedXML
+            // rejects it, and that rejection must surface clearly rather than as an NRE.
+            Assert.ThrowsAny<Exception>(() => _cellService.UpdateRange(tempFile, sheet));
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ManageWorksheet_RenameToSameName_IsNoOp()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            string message = _worksheetService.ManageWorksheet(tempFile, "Sheet1", "rename", "Sheet1");
+
+            Assert.Contains("already named", message, StringComparison.Ordinal);
+
+            using var workbook = new XLWorkbook(tempFile);
+            Assert.True(workbook.TryGetWorksheet("Sheet1", out _));
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ManageWorksheet_DeleteOnlySheet_Throws()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            var ex = Assert.Throws<InvalidOperationException>(() =>
+                _worksheetService.ManageWorksheet(tempFile, "Sheet1", "delete")
+            );
+            Assert.Contains("only worksheet", ex.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ManageTables_ColumnCountMismatch_Throws()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            var ex = Assert.Throws<ArgumentException>(() =>
+                _tableService.ManageTables(
+                    tempFile,
+                    "Sheet1",
+                    "create",
+                    table: new SerializableTable
+                    {
+                        Name = "T1",
+                        Reference = "A1:C2",
+                        Columns = ["OnlyOneName"],
+                    }
+                )
+            );
+            Assert.Contains("3 column", ex.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void PastePictures_EmptyList_ReturnsCleanlyWithoutTouchingFile()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            string message = _pictureService.PastePictures(tempFile, []);
+            Assert.Contains("No pictures", message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ManageFreezePanes_Set_FreezesRowsAndColumnsAboveAndLeftOfAnchor()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            _worksheetService.ManageFreezePanes(tempFile, "Sheet1", "set", "B2");
+
+            using var workbook = new XLWorkbook(tempFile);
+            var ws = workbook.Worksheet("Sheet1");
+            Assert.Equal(1, ws.SheetView.SplitRow);
+            Assert.Equal(1, ws.SheetView.SplitColumn);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ManageFreezePanes_Clear_RemovesExistingFreeze()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            _worksheetService.ManageFreezePanes(tempFile, "Sheet1", "set", "B2");
+            _worksheetService.ManageFreezePanes(tempFile, "Sheet1", "clear");
+
+            using var workbook = new XLWorkbook(tempFile);
+            var ws = workbook.Worksheet("Sheet1");
+            Assert.Equal(0, ws.SheetView.SplitRow);
+            Assert.Equal(0, ws.SheetView.SplitColumn);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ManageRowsColumns_InsertRows_ShiftsExistingContentDown()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            _worksheetService.ManageRowsColumns(tempFile, "Sheet1", "insertRows", "1", 2);
+
+            using var workbook = new XLWorkbook(tempFile);
+            var ws = workbook.Worksheet("Sheet1");
+            Assert.Equal("Hello", ws.Cell("A3").GetString());
+            Assert.True(ws.Cell("A1").IsEmpty());
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ManageRowsColumns_DeleteColumns_RemovesAndShiftsLeft()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            _worksheetService.ManageRowsColumns(tempFile, "Sheet1", "deleteColumns", "A");
+
+            using var workbook = new XLWorkbook(tempFile);
+            var ws = workbook.Worksheet("Sheet1");
+            Assert.Equal("World", ws.Cell("A1").GetString());
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ManageMerge_MergeThenUnmerge_RoundTrips()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            _cellService.ManageMerge(tempFile, "Sheet1", "A1:B1", "merge");
+
+            using (var workbook = new XLWorkbook(tempFile))
+            {
+                var ws = workbook.Worksheet("Sheet1");
+                Assert.True(ws.Range("A1:B1").IsMerged());
+            }
+
+            _cellService.ManageMerge(tempFile, "Sheet1", "A1:B1", "unmerge");
+
+            using (var workbook = new XLWorkbook(tempFile))
+            {
+                var ws = workbook.Worksheet("Sheet1");
+                Assert.False(ws.Range("A1:B1").IsMerged());
+            }
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void AutofitRange_Both_AdjustsColumnWidthAndRowHeight()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            using (var workbook = new XLWorkbook(tempFile))
+            {
+                var ws = workbook.Worksheet("Sheet1");
+                ws.Column("A").Width = 1;
+                workbook.Save();
+            }
+
+            _cellService.AutofitRange(tempFile, "Sheet1", "A1:C1", "columns");
+
+            using var result = new XLWorkbook(tempFile);
+            var resultWs = result.Worksheet("Sheet1");
+            Assert.True(resultWs.Column("A").Width > 1);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
 }

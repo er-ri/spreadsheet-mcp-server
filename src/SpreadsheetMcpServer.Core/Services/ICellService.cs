@@ -76,4 +76,18 @@ public interface ICellService
     /// a format-only banner row inside the range is cleared too. Returns a confirmation message.
     /// </summary>
     string ClearRange(string spreadSheetPath, string spreadSheetName, string range, bool clearFormats = false);
+
+    /// <summary>
+    /// Merges or unmerges a range of cells on a worksheet. 'action' must be "merge" or "unmerge".
+    /// Merging a range that overlaps an existing merged region follows ClosedXML's default behavior
+    /// (the overlapping region is absorbed). Returns a confirmation message.
+    /// </summary>
+    string ManageMerge(string spreadSheetPath, string spreadSheetName, string range, string action);
+
+    /// <summary>
+    /// Auto-sizes column widths and/or row heights within <paramref name="range"/> to fit their
+    /// contents. 'target' must be "columns", "rows", or "both" (default). Returns a confirmation
+    /// message.
+    /// </summary>
+    string AutofitRange(string spreadSheetPath, string spreadSheetName, string range, string target = "both");
 }

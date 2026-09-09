@@ -156,6 +156,7 @@ public static class ToolEntry
                 + "Use this whenever you are writing structured tabular data (a header row plus one or more data rows) to a spreadsheet — prefer it over writing plain cells with UpdateRange for any grid-shaped dataset. "
                 + "Workflow: (1) write the data rows (not the header row) into the range first with UpdateRange, then (2) call ManageTables with action 'create' — it writes the column names from 'table.columns' into the first row of 'table.reference' automatically. "
                 + "'table.reference' must be a full range covering headers and data, e.g. 'A1:C5'. Use 'table.styleName' for a built-in table style (e.g. 'TableStyleMedium9'); omit for no style. "
+                + "'table.showRowStripes', 'table.showFirstColumn', 'table.showLastColumn', and 'table.showColumnStripes' toggle the corresponding Excel table style options. "
                 + "For 'delete', 'tableName' is required — the named table is removed from sheetName. "
                 + "Returns the list of tables remaining on sheetName after the operation."
         )
@@ -171,8 +172,9 @@ public static class ToolEntry
     [
         McpServerTool,
         Description(
-            "Export a JSON array (or single object) to a new worksheet in an Excel file. "
-                + "Creates the file if it does not exist. Throws if a sheet with the same name already exists."
+            "Returns the first picture whose top-left anchor falls within the given range, as an image "
+                + "the model can view directly, or null when no picture is anchored there. 'range' follows "
+                + "the same addressing as other range-based tools."
         )
     ]
     public static ImageContentBlock? GetPictures(string spreadSheetPath, string spreadSheetName, string range)
@@ -243,4 +245,78 @@ public static class ToolEntry
         string range,
         int truncate = 200
     ) => _cellFormatService.ReadCellFormatting(PathResolver.Resolve(spreadSheetPath), spreadSheetName, range, truncate);
+
+    [
+        McpServerTool,
+        Description(
+            "Freezes or unfreezes panes on a worksheet. "
+                + "'action' must be 'set' or 'clear'. "
+                + "For 'set', 'freezeAtAddress' (e.g. 'B2') freezes all rows above and columns left of that cell. "
+                + "Returns a confirmation message."
+        )
+    ]
+    public static string ManageFreezePanes(
+        string spreadSheetPath,
+        string spreadSheetName,
+        string action,
+        string? freezeAtAddress = null
+    ) =>
+        _worksheetService.ManageFreezePanes(
+            PathResolver.Resolve(spreadSheetPath),
+            spreadSheetName,
+            action,
+            freezeAtAddress
+        );
+
+    [
+        McpServerTool,
+        Description(
+            "Inserts or deletes whole rows or columns on a worksheet, shifting subsequent cells. "
+                + "'action' must be 'insertRows', 'deleteRows', 'insertColumns', or 'deleteColumns'. "
+                + "'target' is the 1-based row number or column letter where the operation applies; "
+                + "'count' (default 1) is how many rows/columns to insert or delete. "
+                + "Returns a confirmation message."
+        )
+    ]
+    public static string ManageRowsColumns(
+        string spreadSheetPath,
+        string spreadSheetName,
+        string action,
+        string target,
+        int count = 1
+    ) =>
+        _worksheetService.ManageRowsColumns(
+            PathResolver.Resolve(spreadSheetPath),
+            spreadSheetName,
+            action,
+            target,
+            count
+        );
+
+    [
+        McpServerTool,
+        Description(
+            "Merges or unmerges a range of cells on a worksheet. "
+                + "'action' must be 'merge' or 'unmerge'. "
+                + "Merging a range that overlaps an existing merged region follows ClosedXML's default behavior. "
+                + "Returns a confirmation message."
+        )
+    ]
+    public static string ManageMerge(string spreadSheetPath, string spreadSheetName, string range, string action) =>
+        _cellService.ManageMerge(PathResolver.Resolve(spreadSheetPath), spreadSheetName, range, action);
+
+    [
+        McpServerTool,
+        Description(
+            "Auto-sizes column widths and/or row heights within a range to fit their contents. "
+                + "'target' must be 'columns', 'rows', or 'both' (default). "
+                + "Returns a confirmation message."
+        )
+    ]
+    public static string AutofitRange(
+        string spreadSheetPath,
+        string spreadSheetName,
+        string range,
+        string target = "both"
+    ) => _cellService.AutofitRange(PathResolver.Resolve(spreadSheetPath), spreadSheetName, range, target);
 }

@@ -24,7 +24,8 @@ public class TableService : ITableService
     {
         try
         {
-            using var workbook = new XLWorkbook(spreadSheetPath);
+            using var sanitized = WorkbookReader.SanitizePhoneticRuns(spreadSheetPath);
+            using var workbook = new XLWorkbook(sanitized);
             var worksheet = WorkbookReader.GetWorksheet(workbook, sheetName);
             bool dirty = false;
 
@@ -55,7 +56,7 @@ public class TableService : ITableService
             }
 
             if (dirty)
-                workbook.Save();
+                workbook.SaveAs(spreadSheetPath);
 
             return worksheet.Tables.Select(ReadSerializableTable).ToList();
         }
@@ -79,13 +80,14 @@ public class TableService : ITableService
         (string startCol, int startRow, string endCol, _) = CellReferenceParser.ParseRange(tableInfo.Reference);
         var columnLetters = CellReferenceParser.ExpandColumns(startCol, endCol);
 
-        List<string> columnNames =
-            tableInfo.Columns.Count == columnLetters.Count
-                ? tableInfo.Columns
-                : columnLetters.Select((col, i) => $"Column{i + 1}").ToList();
+        if (tableInfo.Columns.Count != columnLetters.Count)
+            throw new ArgumentException(
+                $"'table.columns' has {tableInfo.Columns.Count} name(s) but 'table.reference' "
+                    + $"('{tableInfo.Reference}') spans {columnLetters.Count} column(s)."
+            );
 
         for (int i = 0; i < columnLetters.Count; i++)
-            worksheet.Cell($"{columnLetters[i]}{startRow}").Value = columnNames[i];
+            worksheet.Cell($"{columnLetters[i]}{startRow}").Value = tableInfo.Columns[i];
 
         var xlTable = worksheet.Range(tableInfo.Reference).CreateTable(tableInfo.Name);
         xlTable.ShowRowStripes = tableInfo.ShowRowStripes;

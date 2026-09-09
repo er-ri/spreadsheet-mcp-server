@@ -22,39 +22,19 @@ public class CellFormatService : ICellFormatService
 
         try
         {
-            using var workbook = new XLWorkbook(spreadSheetPath);
+            using var sanitized = WorkbookReader.SanitizePhoneticRuns(spreadSheetPath);
+            using var workbook = new XLWorkbook(sanitized);
 
             foreach (var format in formats)
             {
                 if (string.IsNullOrWhiteSpace(format.Address))
                     continue;
 
-                // Determine if this is a range or single cell
-                IXLRange? range = null;
-                IXLCell? cell = null;
-
-                if (format.Address.Contains(':'))
-                {
-                    // It's a range like "A1:B5"
-                    range = GetRangeFromAnySheet(workbook, format.Address);
-                }
-                else
-                {
-                    // It's a single cell like "A1"
-                    cell = GetCellFromAnySheet(workbook, format.Address);
-                }
-
-                if (range != null)
-                {
-                    ApplyFormatToRange(range, format);
-                }
-                else if (cell != null)
-                {
-                    ApplyFormatToCell(cell, format);
-                }
+                var range = ResolveRangeFromAnySheet(workbook, format.Address);
+                ApplyFormatToRange(range, format);
             }
 
-            workbook.Save();
+            workbook.SaveAs(spreadSheetPath);
         }
         catch (Exception ex) when (ex is not InvalidOperationException and not ArgumentException)
         {
@@ -365,65 +345,25 @@ public class CellFormatService : ICellFormatService
     }
 
     /// <summary>
-    /// Gets a range from the specified address. Supports both "Sheet!A1:B5" and "A1:B5" formats.
-    /// If no sheet is specified, uses the first worksheet.
+    /// Resolves an address like "A1", "A1:B5", "A:A", or "1:1" — optionally prefixed with a sheet name
+    /// ("Sheet1!A1:B5") — into a range on the named (or first) worksheet. Delegates to
+    /// <see cref="IXLRangeBase.Range(string)"/> unconditionally rather than branching on whether the
+    /// address contains ':', so ClosedXML's own column-only/row-only shorthand ("A:A" → the whole
+    /// column, "1:1" → the whole row) is honored for every address shape instead of only ranges that
+    /// happen to contain a colon. A missing sheet throws <see cref="InvalidOperationException"/>; a
+    /// genuinely malformed address throws ClosedXML's own <see cref="ArgumentException"/> — either way
+    /// a bad <see cref="CellFormatSpec.Address"/> is reported instead of silently applying to no cells.
     /// </summary>
-    private static IXLRange? GetRangeFromAnySheet(XLWorkbook workbook, string address)
+    private static IXLRange ResolveRangeFromAnySheet(XLWorkbook workbook, string address)
     {
-        try
-        {
-            // Check if address includes sheet name (e.g., "Sheet1!A1:B5")
-            var parts = address.Split('!', 2);
+        // Check if address includes sheet name (e.g., "Sheet1!A1:B5")
+        var parts = address.Split('!', 2);
 
-            if (parts.Length == 2)
-            {
-                var sheetName = parts[0].Trim('\'', '"');
-                var rangeAddress = parts[1];
-                var worksheet = workbook.Worksheet(sheetName);
-                return worksheet.Range(rangeAddress);
-            }
-            else
-            {
-                // No sheet specified, use the first worksheet
-                var worksheet = workbook.Worksheet(1);
-                return worksheet.Range(address);
-            }
-        }
-        catch
-        {
-            return null;
-        }
-    }
+        var worksheet =
+            parts.Length == 2 ? WorkbookReader.GetWorksheet(workbook, parts[0].Trim('\'', '"')) : workbook.Worksheet(1);
+        var rangeAddress = parts.Length == 2 ? parts[1] : address;
 
-    /// <summary>
-    /// Gets a cell from the specified address. Supports both "Sheet!A1" and "A1" formats.
-    /// If no sheet is specified, uses the first worksheet.
-    /// </summary>
-    private static IXLCell? GetCellFromAnySheet(XLWorkbook workbook, string address)
-    {
-        try
-        {
-            // Check if address includes sheet name (e.g., "Sheet1!A1")
-            var parts = address.Split('!', 2);
-
-            if (parts.Length == 2)
-            {
-                var sheetName = parts[0].Trim('\'', '"');
-                var cellAddress = parts[1];
-                var worksheet = workbook.Worksheet(sheetName);
-                return worksheet.Cell(cellAddress);
-            }
-            else
-            {
-                // No sheet specified, use the first worksheet
-                var worksheet = workbook.Worksheet(1);
-                return worksheet.Cell(address);
-            }
-        }
-        catch
-        {
-            return null;
-        }
+        return worksheet.Range(rangeAddress);
     }
 
     /// <summary>
@@ -542,7 +482,11 @@ public class CellFormatService : ICellFormatService
             "fill" => XLAlignmentHorizontalValues.Fill,
             "centercontinuous" => XLAlignmentHorizontalValues.CenterContinuous,
             "distributed" => XLAlignmentHorizontalValues.Distributed,
-            _ => XLAlignmentHorizontalValues.General,
+            // Any remaining XLAlignmentHorizontalValues name is accepted verbatim, so a value read
+            // by ReadCellFormatting survives being applied back.
+            _ => Enum.TryParse<XLAlignmentHorizontalValues>(alignment, ignoreCase: true, out var parsed)
+                ? parsed
+                : XLAlignmentHorizontalValues.General,
         };
     }
 
@@ -558,7 +502,11 @@ public class CellFormatService : ICellFormatService
             "bottom" => XLAlignmentVerticalValues.Bottom,
             "justify" => XLAlignmentVerticalValues.Justify,
             "distributed" => XLAlignmentVerticalValues.Distributed,
-            _ => XLAlignmentVerticalValues.Bottom,
+            // Any remaining XLAlignmentVerticalValues name is accepted verbatim, so a value read
+            // by ReadCellFormatting survives being applied back.
+            _ => Enum.TryParse<XLAlignmentVerticalValues>(alignment, ignoreCase: true, out var parsed)
+                ? parsed
+                : XLAlignmentVerticalValues.Bottom,
         };
     }
 

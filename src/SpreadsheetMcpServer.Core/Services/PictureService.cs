@@ -19,7 +19,8 @@ public class PictureService : IPictureService
     {
         try
         {
-            using var workbook = new XLWorkbook(spreadSheetPath);
+            using var sanitized = WorkbookReader.SanitizePhoneticRuns(spreadSheetPath);
+            using var workbook = new XLWorkbook(sanitized);
             var worksheet = WorkbookReader.GetWorksheet(workbook, spreadSheetName);
 
             var bounds = worksheet.Range(range).RangeAddress;
@@ -66,9 +67,13 @@ public class PictureService : IPictureService
     /// </summary>
     public string PastePictures(string spreadSheetPath, List<PicturePasteSpec> pictures)
     {
+        if (pictures == null || pictures.Count == 0)
+            return "No pictures to insert.";
+
         try
         {
-            using var workbook = new XLWorkbook(spreadSheetPath);
+            using var sanitized = WorkbookReader.SanitizePhoneticRuns(spreadSheetPath);
+            using var workbook = new XLWorkbook(sanitized);
 
             int index = 0;
             foreach (var spec in pictures)
@@ -97,7 +102,7 @@ public class PictureService : IPictureService
                 index++;
             }
 
-            workbook.Save();
+            workbook.SaveAs(spreadSheetPath);
 
             return $"Inserted {pictures.Count} picture(s) into {spreadSheetPath}.";
         }

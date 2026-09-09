@@ -685,22 +685,18 @@ public class CellService : ICellService
 
             foreach (var (address, markdown) in rows)
             {
-                IXLCell cell;
+                // Resolve via Range() unconditionally so ClosedXML's own shorthand ("A:A", "1:1")
+                // and plain single-cell addresses ("A1") both work — see CellFormatService's
+                // ResolveRangeFromAnySheet for the same fix applied to ApplyCellFormatting.
+                var range = worksheet.Range(address);
 
                 // A key containing ':' is a merged range address (e.g. "AD629:AL638"): merge the
-                // region and write into its anchor (top-left) cell. Otherwise it is a single cell.
+                // region and write into its anchor (top-left) cell. Otherwise it is a single cell,
+                // and a single-cell range's FirstCell() is that cell.
                 if (address.Contains(':'))
-                {
-                    var range = worksheet.Range(address);
                     range.Merge();
-                    cell = range.FirstCell();
-                }
-                else
-                {
-                    cell = worksheet.Cell(address);
-                }
 
-                WriteMarkdown(cell, markdown);
+                WriteMarkdown(range.FirstCell(), markdown);
             }
 
             workbook.SaveAs(spreadSheetPath);
@@ -743,6 +739,94 @@ public class CellService : ICellService
         catch (Exception ex) when (ex is not InvalidOperationException and not ArgumentException)
         {
             throw new InvalidOperationException($"Error clearing Excel file: {ex.Message}", ex);
+        }
+    }
+
+    /// <inheritdoc />
+    public string ManageMerge(string spreadSheetPath, string spreadSheetName, string range, string action)
+    {
+        try
+        {
+            using var sanitized = WorkbookReader.SanitizePhoneticRuns(spreadSheetPath);
+            using var workbook = new XLWorkbook(sanitized);
+            var worksheet = WorkbookReader.GetWorksheet(workbook, spreadSheetName);
+            var target = worksheet.Range(range);
+            string message;
+
+            switch (action.Trim().ToLowerInvariant())
+            {
+                case "merge":
+                    target.Merge();
+                    message = $"Merged {target.RangeAddress.ToStringRelative(false)} in '{spreadSheetName}'.";
+                    break;
+
+                case "unmerge":
+                    target.Unmerge();
+                    message = $"Unmerged {target.RangeAddress.ToStringRelative(false)} in '{spreadSheetName}'.";
+                    break;
+
+                default:
+                    throw new InvalidOperationException($"Unknown action '{action}'. Expected 'merge' or 'unmerge'.");
+            }
+
+            workbook.SaveAs(spreadSheetPath);
+            return message;
+        }
+        catch (Exception ex) when (ex is not InvalidOperationException and not ArgumentException)
+        {
+            throw new InvalidOperationException($"Error updating Excel file: {ex.Message}", ex);
+        }
+    }
+
+    /// <inheritdoc />
+    public string AutofitRange(string spreadSheetPath, string spreadSheetName, string range, string target = "both")
+    {
+        try
+        {
+            using var sanitized = WorkbookReader.SanitizePhoneticRuns(spreadSheetPath);
+            using var workbook = new XLWorkbook(sanitized);
+            var worksheet = WorkbookReader.GetWorksheet(workbook, spreadSheetName);
+            var xlRange = worksheet.Range(range);
+
+            void AdjustColumns()
+            {
+                foreach (var column in xlRange.Columns())
+                    worksheet.Column(column.ColumnNumber()).AdjustToContents();
+            }
+
+            void AdjustRows()
+            {
+                foreach (var row in xlRange.Rows())
+                    worksheet.Row(row.RowNumber()).AdjustToContents();
+            }
+
+            switch (target.Trim().ToLowerInvariant())
+            {
+                case "columns":
+                    AdjustColumns();
+                    break;
+
+                case "rows":
+                    AdjustRows();
+                    break;
+
+                case "both":
+                    AdjustColumns();
+                    AdjustRows();
+                    break;
+
+                default:
+                    throw new InvalidOperationException(
+                        $"Unknown target '{target}'. Expected 'columns', 'rows', or 'both'."
+                    );
+            }
+
+            workbook.SaveAs(spreadSheetPath);
+            return $"Autofit {target.Trim().ToLowerInvariant()} for {xlRange.RangeAddress.ToStringRelative(false)} in '{spreadSheetName}'.";
+        }
+        catch (Exception ex) when (ex is not InvalidOperationException and not ArgumentException)
+        {
+            throw new InvalidOperationException($"Error updating Excel file: {ex.Message}", ex);
         }
     }
 
