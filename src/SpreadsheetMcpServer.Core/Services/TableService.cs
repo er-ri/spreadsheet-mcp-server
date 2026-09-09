@@ -25,7 +25,7 @@ public class TableService : ITableService
         try
         {
             using var workbook = new XLWorkbook(spreadSheetPath);
-            var worksheet = workbook.Worksheet(sheetName);
+            var worksheet = WorkbookReader.GetWorksheet(workbook, sheetName);
             bool dirty = false;
 
             switch (action.Trim().ToLowerInvariant())
@@ -76,7 +76,7 @@ public class TableService : ITableService
         if (nameExists)
             throw new InvalidOperationException($"A table named '{tableInfo.Name}' already exists.");
 
-        (string startCol, uint startRow, string endCol, _) = CellReferenceParser.ParseRange(tableInfo.Reference);
+        (string startCol, int startRow, string endCol, _) = CellReferenceParser.ParseRange(tableInfo.Reference);
         var columnLetters = CellReferenceParser.ExpandColumns(startCol, endCol);
 
         List<string> columnNames =

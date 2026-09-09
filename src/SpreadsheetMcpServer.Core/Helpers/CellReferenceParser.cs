@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace SpreadsheetMcpServer.Core.Helpers;
 
 /// <summary>
@@ -15,27 +17,27 @@ public static class CellReferenceParser
     }
 
     /// <summary>Returns the row number portion of a cell reference (e.g. 12 from "AB12").</summary>
-    public static uint GetRowIndex(string cellReference)
+    public static int GetRowIndex(string cellReference)
     {
         int i = 0;
         while (i < cellReference.Length && char.IsLetter(cellReference[i]))
             i++;
-        return uint.Parse(cellReference[i..]);
+        return int.Parse(cellReference[i..], CultureInfo.InvariantCulture);
     }
 
     /// <summary>
     /// Parses a range like "A1:C5" into (startCol, startRow, endCol, endRow).
     /// </summary>
-    public static (string startCol, uint startRow, string endCol, uint endRow) ParseRange(string reference)
+    public static (string startCol, int startRow, string endCol, int endRow) ParseRange(string reference)
     {
         string[] parts = reference.Split(':');
         if (parts.Length != 2)
             throw new InvalidOperationException($"Invalid range reference: '{reference}'.");
 
         string startCol = GetColumnName(parts[0]);
-        uint startRow = GetRowIndex(parts[0]);
+        int startRow = GetRowIndex(parts[0]);
         string endCol = GetColumnName(parts[1]);
-        uint endRow = GetRowIndex(parts[1]);
+        int endRow = GetRowIndex(parts[1]);
         return (startCol, startRow, endCol, endRow);
     }
 

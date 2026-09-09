@@ -14,29 +14,32 @@ public class SpreadsheetExportService : ISpreadsheetExportService
     /// </summary>
     public void ExportJsonArrayToSpreadSheet(string spreadSheetPath, string sheetName, string json)
     {
-        var token = JToken.Parse(json);
-        var array = token is JArray arr ? arr : new JArray(token);
-
-        // MiniExcel accepts IEnumerable<IDictionary<string,object>>
-        var rows = array
-            .OfType<JObject>()
-            .Select(o => o.Properties().ToDictionary(p => p.Name, p => (object?)p.Value.ToObject<object>()))
-            .ToList();
-
-        var tempSpreadSheetPath = Path.Combine(Path.GetTempPath(), $"temp_{Guid.NewGuid():N}.xlsx");
-        var tempSheetName = "tempSheet";
-
-        MiniExcel.SaveAs(tempSpreadSheetPath, rows, sheetName: tempSheetName);
-
-        // Open the temp workbook written by MiniExcel and grab the sheet
-        using var tempWorkbook = new XLWorkbook(tempSpreadSheetPath);
-        var tempSheet = tempWorkbook.Worksheet(tempSheetName);
-
-        // Open the target workbook if it exists; otherwise start a new one
-        XLWorkbook targetWorkbook = File.Exists(spreadSheetPath) ? new XLWorkbook(spreadSheetPath) : new XLWorkbook();
-
-        using (targetWorkbook)
+        try
         {
+            var token = JToken.Parse(json);
+            var array = token is JArray arr ? arr : new JArray(token);
+
+            // MiniExcel accepts IEnumerable<IDictionary<string,object>>
+            var rows = array
+                .OfType<JObject>()
+                .Select(o => o.Properties().ToDictionary(p => p.Name, p => (object?)p.Value.ToObject<object>()))
+                .ToList();
+
+            // Render the JSON rows through MiniExcel into an in-memory workbook, then copy its sheet into
+            // the target. No temp file is used, so nothing can leak if a later step throws.
+            var tempSheetName = "tempSheet";
+            using var memory = new MemoryStream();
+            MiniExcel.SaveAs(memory, rows, sheetName: tempSheetName);
+            memory.Position = 0;
+
+            using var tempWorkbook = new XLWorkbook(memory);
+            var tempSheet = tempWorkbook.Worksheet(tempSheetName);
+
+            // Open the target workbook if it exists; otherwise start a new one
+            using var targetWorkbook = File.Exists(spreadSheetPath)
+                ? new XLWorkbook(spreadSheetPath)
+                : new XLWorkbook();
+
             // Throw if a sheet with the same name already exists
             if (targetWorkbook.TryGetWorksheet(sheetName, out _))
                 throw new InvalidOperationException($"Sheet '{sheetName}' already exists in '{spreadSheetPath}'.");
@@ -44,7 +47,9 @@ public class SpreadsheetExportService : ISpreadsheetExportService
             tempSheet.CopyTo(targetWorkbook, sheetName);
             targetWorkbook.SaveAs(spreadSheetPath);
         }
-
-        File.Delete(tempSpreadSheetPath);
+        catch (Exception ex) when (ex is not InvalidOperationException and not ArgumentException)
+        {
+            throw new InvalidOperationException($"Error exporting to Excel file: {ex.Message}", ex);
+        }
     }
 }

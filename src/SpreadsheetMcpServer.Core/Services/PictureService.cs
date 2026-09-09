@@ -1,5 +1,6 @@
 using ClosedXML.Excel;
 using ClosedXML.Excel.Drawings;
+using SpreadsheetMcpServer.Core.Helpers;
 using SpreadsheetMcpServer.Core.Models;
 
 namespace SpreadsheetMcpServer.Core.Services;
@@ -19,7 +20,7 @@ public class PictureService : IPictureService
         try
         {
             using var workbook = new XLWorkbook(spreadSheetPath);
-            var worksheet = workbook.Worksheet(spreadSheetName);
+            var worksheet = WorkbookReader.GetWorksheet(workbook, spreadSheetName);
 
             var bounds = worksheet.Range(range).RangeAddress;
             int firstRow = bounds.FirstAddress.RowNumber;
@@ -52,7 +53,7 @@ public class PictureService : IPictureService
 
             return null;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not InvalidOperationException and not ArgumentException)
         {
             throw new InvalidOperationException($"Error reading Excel file: {ex.Message}", ex);
         }
@@ -67,22 +68,19 @@ public class PictureService : IPictureService
     {
         try
         {
-            string basePath =
-                Environment.GetEnvironmentVariable("SPREADSHEET_BASE_PATH") ?? Directory.GetCurrentDirectory();
-
             using var workbook = new XLWorkbook(spreadSheetPath);
 
             int index = 0;
             foreach (var spec in pictures)
             {
-                string picturePath = Path.IsPathRooted(spec.PicturePath)
-                    ? spec.PicturePath
-                    : Path.Combine(basePath, spec.PicturePath);
+                // Resolve the picture against the shared base directory and reject any path that
+                // escapes it, the same containment as spreadsheet paths.
+                string picturePath = PathResolver.Resolve(spec.PicturePath);
 
                 if (!File.Exists(picturePath))
                     throw new FileNotFoundException($"Picture file not found: {picturePath}");
 
-                var worksheet = workbook.Worksheet(spec.TargetSheet);
+                var worksheet = WorkbookReader.GetWorksheet(workbook, spec.TargetSheet);
 
                 // Picture names must be unique per worksheet and at most 31 characters.
                 string name = UniquePictureName(worksheet, index);
@@ -103,7 +101,7 @@ public class PictureService : IPictureService
 
             return $"Inserted {pictures.Count} picture(s) into {spreadSheetPath}.";
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not InvalidOperationException and not ArgumentException)
         {
             throw new InvalidOperationException($"Error writing Excel file: {ex.Message}", ex);
         }

@@ -27,7 +27,7 @@ public class WorksheetService : IWorksheetService
                 })
                 .ToList();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not InvalidOperationException and not ArgumentException)
         {
             throw new InvalidOperationException($"Error reading Excel file: {ex.Message}", ex);
         }
@@ -81,7 +81,7 @@ public class WorksheetService : IWorksheetService
                     );
             }
 
-            workbook.Save();
+            workbook.SaveAs(spreadSheetPath);
             return message;
         }
         catch (Exception ex) when (ex is not InvalidOperationException and not ArgumentException)

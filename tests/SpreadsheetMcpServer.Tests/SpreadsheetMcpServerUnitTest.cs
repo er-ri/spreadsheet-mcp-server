@@ -1,16 +1,21 @@
+using System.Globalization;
 using ClosedXML.Excel;
 using SpreadsheetMcpServer.Core.Models;
 using SpreadsheetMcpServer.Core.Services;
 
 namespace SpreadsheetMcpServer.Tests;
 
+[Collection(BasePathCollectionDefinition.Name)]
 public class SpreadsheetMcpServerUnitTest
 {
+    // The base directory is set by BasePathFixture, which the collection creates once; joining the
+    // collection is what keeps that process-wide env var from being raced by another test class.
     private readonly IWorksheetService _worksheetService = new WorksheetService();
     private readonly ICellService _cellService = new CellService();
     private readonly ITableService _tableService = new TableService();
     private readonly ISpreadsheetExportService _exportService = new SpreadsheetExportService();
     private readonly IPictureService _pictureService = new PictureService();
+    private readonly ICellFormatService _cellFormatService = new CellFormatService();
 
     /// <summary>
     /// Parses a two-column Address/Contents Markdown table (the shape of
@@ -50,7 +55,7 @@ public class SpreadsheetMcpServerUnitTest
     {
         var sb = new System.Text.StringBuilder("| Address | Contents |\n| --- | --- |");
         foreach (var (address, markdown) in rows)
-            sb.Append($"\n| {address} | {markdown.Replace("|", "\\|")} |");
+            sb.Append(CultureInfo.InvariantCulture, $"\n| {address} | {markdown.Replace("|", "\\|")} |");
         return sb.ToString();
     }
 
@@ -130,6 +135,23 @@ public class SpreadsheetMcpServerUnitTest
             Assert.Throws<InvalidOperationException>(() =>
                 _worksheetService.ManageWorksheet(tempFile, "Missing", "delete")
             );
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ManageWorksheet_Create_BrandNewFileNamedSheet1_Succeeds()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"create_new_{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            _worksheetService.ManageWorksheet(tempFile, "Sheet1", "create");
+
+            var names = _worksheetService.GetAllWorksheets(tempFile).Select(s => s.Name);
+            Assert.Equal(["Sheet1"], names);
         }
         finally
         {
@@ -1295,6 +1317,183 @@ public class SpreadsheetMcpServerUnitTest
     }
 
     [Fact]
+    public void UpdateRange_WritesNumbersAsNumericCells()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            _cellService.UpdateRange(
+                tempFile,
+                new MarkdownSheet
+                {
+                    SheetName = "Sheet1",
+                    Contents = BuildContents(("A1", "42"), ("A2", "3.14159"), ("A3", "-7")),
+                }
+            );
+
+            using var workbook = new XLWorkbook(tempFile);
+            var ws = workbook.Worksheet("Sheet1");
+            Assert.Equal(XLDataType.Number, ws.Cell("A1").DataType);
+            Assert.Equal(42.0, ws.Cell("A1").GetDouble());
+            Assert.Equal(XLDataType.Number, ws.Cell("A2").DataType);
+            Assert.Equal(3.14159, ws.Cell("A2").GetDouble());
+            Assert.Equal(XLDataType.Number, ws.Cell("A3").DataType);
+            Assert.Equal(-7.0, ws.Cell("A3").GetDouble());
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void UpdateRange_WritesFormulaCell()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            using (var workbook = new XLWorkbook(tempFile))
+            {
+                var ws = workbook.Worksheet("Sheet1");
+                ws.Cell("A1").Value = 20;
+                ws.Cell("A2").Value = 22;
+                workbook.Save();
+            }
+
+            _cellService.UpdateRange(
+                tempFile,
+                new MarkdownSheet { SheetName = "Sheet1", Contents = BuildContents(("A3", "=SUM(A1:A2)")) }
+            );
+
+            using var readWorkbook = new XLWorkbook(tempFile);
+            var readWs = readWorkbook.Worksheet("Sheet1");
+            Assert.True(readWs.Cell("A3").HasFormula);
+            Assert.Equal("SUM(A1:A2)", readWs.Cell("A3").FormulaA1);
+            Assert.Equal(42.0, readWs.Cell("A3").GetDouble());
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void UpdateRange_WritesBooleanAndDateCells()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            _cellService.UpdateRange(
+                tempFile,
+                new MarkdownSheet
+                {
+                    SheetName = "Sheet1",
+                    Contents = BuildContents(("A1", "true"), ("A2", "FALSE"), ("A3", "2026-09-07")),
+                }
+            );
+
+            using var workbook = new XLWorkbook(tempFile);
+            var ws = workbook.Worksheet("Sheet1");
+            Assert.Equal(XLDataType.Boolean, ws.Cell("A1").DataType);
+            Assert.True(ws.Cell("A1").GetBoolean());
+            Assert.Equal(XLDataType.Boolean, ws.Cell("A2").DataType);
+            Assert.False(ws.Cell("A2").GetBoolean());
+            Assert.Equal(XLDataType.DateTime, ws.Cell("A3").DataType);
+            Assert.Equal(new DateTime(2026, 9, 7), ws.Cell("A3").GetDateTime());
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void UpdateRange_ApostrophePrefix_WritesLiteralText()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            _cellService.UpdateRange(
+                tempFile,
+                new MarkdownSheet
+                {
+                    SheetName = "Sheet1",
+                    Contents = BuildContents(("A1", "'=SUM(A1:A2)"), ("A2", "'007"), ("A3", "'true")),
+                }
+            );
+
+            using var workbook = new XLWorkbook(tempFile);
+            var ws = workbook.Worksheet("Sheet1");
+            Assert.Equal(XLDataType.Text, ws.Cell("A1").DataType);
+            Assert.Equal("=SUM(A1:A2)", ws.Cell("A1").GetString());
+            Assert.False(ws.Cell("A1").HasFormula);
+            Assert.Equal(XLDataType.Text, ws.Cell("A2").DataType);
+            Assert.Equal("007", ws.Cell("A2").GetString());
+            Assert.Equal(XLDataType.Text, ws.Cell("A3").DataType);
+            Assert.Equal("true", ws.Cell("A3").GetString());
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ClearRange_RemovesContentsButKeepsFormatting()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"fixture_{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            using (var workbook = new XLWorkbook())
+            {
+                var ws = workbook.Worksheets.Add("Sheet1");
+                ws.Cell("A1").Value = "Hello";
+                ws.Cell("A1").Style.Font.Bold = true;
+                workbook.SaveAs(tempFile);
+            }
+
+            string message = _cellService.ClearRange(tempFile, "Sheet1", "A1:B10");
+
+            using var readWorkbook = new XLWorkbook(tempFile);
+            var readWs = readWorkbook.Worksheet("Sheet1");
+            Assert.Contains("A1", message);
+            Assert.True(readWs.Cell("A1").IsEmpty());
+            Assert.True(readWs.Cell("A1").Style.Font.Bold);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ClearRange_ClearFormats_AlsoRemovesFormatting()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"fixture_{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            using (var workbook = new XLWorkbook())
+            {
+                var ws = workbook.Worksheets.Add("Sheet1");
+                ws.Cell("A1").Value = "Hello";
+                ws.Cell("A1").Style.Font.Bold = true;
+                workbook.SaveAs(tempFile);
+            }
+
+            _cellService.ClearRange(tempFile, "Sheet1", "A1:B10", clearFormats: true);
+
+            using var readWorkbook = new XLWorkbook(tempFile);
+            var readWs = readWorkbook.Worksheet("Sheet1");
+            Assert.True(readWs.Cell("A1").IsEmpty());
+            Assert.False(readWs.Cell("A1").Style.Font.Bold);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
     public void LoadRangeInMarkdownTable_SimpleGrid_LaysOutValuesByPosition()
     {
         string tempFile = Path.Combine(Path.GetTempPath(), $"fixture_{Guid.NewGuid():N}.xlsx");
@@ -1482,7 +1681,8 @@ public class SpreadsheetMcpServerUnitTest
             MarkdownSheet result = _cellService.LoadRange(tempFile, "Sheet1", "A1:Q60");
 
             // Exactly two data rows (A1, C1) on top of the header + separator — no blank-cell row.
-            int dataRows = result.Contents.Split('\n').Count(l => l.TrimStart().StartsWith("| ")) - 2; // header row + separator row
+            int dataRows =
+                result.Contents.Split('\n').Count(l => l.TrimStart().StartsWith("| ", StringComparison.Ordinal)) - 2; // header row + separator row
             Assert.Equal(2, dataRows);
             Assert.DoesNotContain("| B1 |", result.Contents);
         }
@@ -1667,6 +1867,637 @@ public class SpreadsheetMcpServerUnitTest
         finally
         {
             File.Delete(tempFile);
+        }
+    }
+
+    /// <summary>
+    /// Finds the single entry addressed <paramref name="address"/>, failing the test when absent.
+    /// </summary>
+    private static CellFormatSpec Entry(List<CellFormatSpec> specs, string address)
+    {
+        var match = specs.SingleOrDefault(f => f.Address == address);
+        Assert.True(match != null, $"No entry for '{address}'. Got: {string.Join(", ", specs.Select(f => f.Address))}");
+        return match!;
+    }
+
+    [Fact]
+    public void ReadCellFormatting_OmitsDefaultStyledCells()
+    {
+        // CreateSimpleWorkbook writes values but never touches styling.
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            var result = _cellFormatService.ReadCellFormatting(tempFile, "Sheet1", "A1:Q60");
+
+            Assert.Empty(result);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ReadCellFormatting_CoalescesAdjacentIdenticalCellsIntoRange()
+    {
+        string tempFile = TestFixtureFactory.CreateStyledWorkbookForFormatReading("Sheet1");
+        try
+        {
+            var result = _cellFormatService.ReadCellFormatting(tempFile, "Sheet1", "A1:Q60");
+
+            // The header run is one entry, not four; the number column is one entry, not nine.
+            var header = Entry(result, "A1:D1");
+            Assert.True(header.Bold);
+            Assert.Equal("#FFFF00", header.BackgroundColor);
+            Assert.Equal("Center", header.HorizontalAlignment);
+
+            var numbers = Entry(result, "A2:A10");
+            Assert.Equal("#,##0", numbers.NumberFormat);
+            Assert.Equal("Thin", numbers.TopBorder?.Style);
+            Assert.Equal("Thin", numbers.RightBorder?.Style);
+
+            // A cell styled differently from its neighbours stays on its own.
+            Assert.True(Entry(result, "B5").Italic);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ReadCellFormatting_ReportsRowHeightAndColumnWidth()
+    {
+        string tempFile = TestFixtureFactory.CreateStyledWorkbookForFormatReading("Sheet1");
+        try
+        {
+            var result = _cellFormatService.ReadCellFormatting(tempFile, "Sheet1", "A1:Q60");
+
+            // Row 1's height is addressed to the first column of the read range, column C's width to
+            // the first row — the cells ApplyCellFormatting resolves back to that row/column.
+            var height = result.Single(f => f.Height.HasValue);
+            Assert.Equal("A1", height.Address);
+            Assert.Equal(30, height.Height!.Value, 3);
+
+            var width = result.Single(f => f.Width.HasValue);
+            Assert.Equal("C1", width.Address);
+            Assert.Equal(25, width.Width!.Value, 3);
+
+            // Dimension entries come before the style entries.
+            Assert.True(result.IndexOf(height) < result.FindIndex(f => f.Address == "A1:D1"));
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ReadCellFormatting_ReadsFontFillAlignment()
+    {
+        // A1 = "Styled": bold, italic, strikethrough, single underline, red font, yellow fill,
+        // centered, wrap-text.
+        string tempFile = TestFixtureFactory.CreateFormattedWorkbook("Sheet1");
+        try
+        {
+            var result = _cellFormatService.ReadCellFormatting(tempFile, "Sheet1", "A1:Q60");
+
+            var a1 = Entry(result, "A1");
+            Assert.True(a1.Bold);
+            Assert.True(a1.Italic);
+            Assert.True(a1.Strikethrough);
+            Assert.True(a1.Underline);
+            Assert.Equal("#FF0000", a1.FontColor);
+            Assert.Equal("#FFFF00", a1.BackgroundColor);
+            Assert.Equal("Center", a1.HorizontalAlignment);
+            Assert.True(a1.WrapText);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ReadCellFormatting_ReadsStylingOfCellWithNoContents()
+    {
+        // A cell can carry styling and no value at all — a colored banner row, a bordered box. The
+        // used range must be computed from formats as well as contents, or these vanish.
+        string tempFile = Path.Combine(Path.GetTempPath(), $"fixture_{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            using (var workbook = new XLWorkbook())
+            {
+                var ws = workbook.Worksheets.Add("Sheet1");
+                ws.Cell("A1").Value = "Anchor";
+                ws.Cell("C3").Style.Fill.BackgroundColor = XLColor.Cyan; // styled, but empty
+                workbook.SaveAs(tempFile);
+            }
+
+            var result = _cellFormatService.ReadCellFormatting(tempFile, "Sheet1", "A1:Q60");
+
+            Assert.Equal("#00FFFF", Entry(result, "C3").BackgroundColor);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ReadCellFormatting_RoundTripsThroughApplyCellFormatting()
+    {
+        string source = TestFixtureFactory.CreateStyledWorkbookForFormatReading("Sheet1");
+        string target = Path.Combine(Path.GetTempPath(), $"fixture_{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            using (var workbook = new XLWorkbook())
+            {
+                workbook.Worksheets.Add("Sheet1");
+                workbook.SaveAs(target);
+            }
+
+            var original = _cellFormatService.ReadCellFormatting(source, "Sheet1", "A1:Q60");
+            Assert.NotEmpty(original);
+
+            // The read output is fed back verbatim — this is the contract the tool exists for.
+            _cellFormatService.ApplyCellFormatting(target, original);
+
+            var reapplied = _cellFormatService.ReadCellFormatting(target, "Sheet1", "A1:Q60");
+
+            Assert.Equal(
+                original.Select(f => f.Address).OrderBy(a => a, StringComparer.Ordinal),
+                reapplied.Select(f => f.Address).OrderBy(a => a, StringComparer.Ordinal)
+            );
+
+            foreach (var before in original)
+            {
+                var after = Entry(reapplied, before.Address);
+                Assert.Equal(before.Bold, after.Bold);
+                Assert.Equal(before.Italic, after.Italic);
+                Assert.Equal(before.Underline, after.Underline);
+                Assert.Equal(before.Strikethrough, after.Strikethrough);
+                Assert.Equal(before.FontColor, after.FontColor);
+                Assert.Equal(before.FontName, after.FontName);
+                Assert.Equal(before.FontSize, after.FontSize);
+                Assert.Equal(before.BackgroundColor, after.BackgroundColor);
+                Assert.Equal(before.HorizontalAlignment, after.HorizontalAlignment);
+                Assert.Equal(before.VerticalAlignment, after.VerticalAlignment);
+                Assert.Equal(before.WrapText, after.WrapText);
+                Assert.Equal(before.NumberFormat, after.NumberFormat);
+                Assert.Equal(before.TopBorder?.Style, after.TopBorder?.Style);
+                Assert.Equal(before.BottomBorder?.Style, after.BottomBorder?.Style);
+                Assert.Equal(before.LeftBorder?.Style, after.LeftBorder?.Style);
+                Assert.Equal(before.RightBorder?.Style, after.RightBorder?.Style);
+                Assert.Equal(before.Height, after.Height);
+                Assert.Equal(before.Width, after.Width);
+            }
+        }
+        finally
+        {
+            File.Delete(source);
+            File.Delete(target);
+        }
+    }
+
+    [Fact]
+    public void ReadCellFormatting_TruncateCapsEntryCount()
+    {
+        string tempFile = TestFixtureFactory.CreateStyledWorkbookForFormatReading("Sheet1");
+        try
+        {
+            var all = _cellFormatService.ReadCellFormatting(tempFile, "Sheet1", "A1:Q60", truncate: 0);
+            Assert.True(all.Count > 2);
+
+            var capped = _cellFormatService.ReadCellFormatting(tempFile, "Sheet1", "A1:Q60", truncate: 2);
+
+            Assert.Equal(2, capped.Count);
+            Assert.Equal(all.Take(2).Select(f => f.Address), capped.Select(f => f.Address));
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ReadCellFormatting_RangeSmallerThanUsedRange_ReadsOnlyRequestedRange()
+    {
+        string tempFile = TestFixtureFactory.CreateStyledWorkbookForFormatReading("Sheet1");
+        try
+        {
+            var result = _cellFormatService.ReadCellFormatting(tempFile, "Sheet1", "A1:B1", truncate: 0);
+
+            // The header run is clipped to the requested range, and the number column is outside it.
+            Assert.Contains(result, f => f.Address == "A1:B1");
+            Assert.DoesNotContain(result, f => f.Address == "A2:A10");
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ReadCellFormatting_UnknownSheet_Throws()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() =>
+                _cellFormatService.ReadCellFormatting(tempFile, "NoSuchSheet", "A1:Q60")
+            );
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ApplyCellFormatting_BorderStyleWithoutExplicitCase_RoundTrips()
+    {
+        // MediumDashDotDot has no hand-written case in ParseBorderStyle; it must still survive being
+        // read and applied back, rather than degrading to no border.
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            _cellFormatService.ApplyCellFormatting(
+                tempFile,
+                [
+                    new CellFormatSpec
+                    {
+                        Address = "A1",
+                        TopBorder = new BorderSpec { Style = "MediumDashDotDot" },
+                    },
+                ]
+            );
+
+            var result = _cellFormatService.ReadCellFormatting(tempFile, "Sheet1", "A1:Q60");
+
+            Assert.Equal("MediumDashDotDot", Entry(result, "A1").TopBorder?.Style);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ApplyCellFormatting_AppliesFontFillAlignmentAndDimensions()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            _cellFormatService.ApplyCellFormatting(
+                tempFile,
+                [
+                    new CellFormatSpec
+                    {
+                        Address = "A1:B2",
+                        Bold = true,
+                        FontColor = "#FF0000",
+                        BackgroundColor = "#00FF00",
+                        HorizontalAlignment = "Right",
+                        NumberFormat = "0.00",
+                    },
+                    new CellFormatSpec { Address = "A1", Height = 40 },
+                ]
+            );
+
+            using var workbook = new XLWorkbook(tempFile);
+            var ws = workbook.Worksheet("Sheet1");
+
+            Assert.True(ws.Cell("B2").Style.Font.Bold);
+            Assert.Equal(XLColor.FromHtml("#FF0000"), ws.Cell("A1").Style.Font.FontColor);
+            Assert.Equal(XLColor.FromHtml("#00FF00"), ws.Cell("A1").Style.Fill.BackgroundColor);
+            Assert.Equal(XLAlignmentHorizontalValues.Right, ws.Cell("A1").Style.Alignment.Horizontal);
+            Assert.Equal("0.00", ws.Cell("A1").Style.NumberFormat.Format);
+            Assert.Equal(40, ws.Row(1).Height, 3);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void PathResolver_GetWorkingDirectory_UsesBasePathWhenSet()
+    {
+        string baseDir = Path.Combine(Path.GetTempPath(), $"base_dir_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(baseDir);
+        try
+        {
+            string wd = BasePathFixture.WithBasePath(
+                baseDir,
+                () => SpreadsheetMcpServer.Core.Helpers.PathResolver.GetWorkingDirectory()
+            );
+            Assert.Equal(Path.GetFullPath(baseDir), wd);
+        }
+        finally
+        {
+            Directory.Delete(baseDir);
+        }
+    }
+
+    [Fact]
+    public void PathResolver_ResolveRelativePath_CombinesWithBase()
+    {
+        string baseDir = Path.Combine(Path.GetTempPath(), $"base_dir_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(baseDir);
+        try
+        {
+            string resolved = BasePathFixture.WithBasePath(
+                baseDir,
+                () => SpreadsheetMcpServer.Core.Helpers.PathResolver.Resolve("books/x.xlsx")
+            );
+
+            Assert.Equal(Path.Combine(Path.GetFullPath(baseDir), "books", "x.xlsx"), resolved);
+        }
+        finally
+        {
+            Directory.Delete(baseDir);
+        }
+    }
+
+    [Fact]
+    public void PathResolver_ResolveAbsoluteInsideBase_Accepted()
+    {
+        string baseDir = Path.Combine(Path.GetTempPath(), $"base_dir_{Guid.NewGuid():N}");
+        string inner = Path.Combine(baseDir, "inner.xlsx");
+        Directory.CreateDirectory(baseDir);
+        try
+        {
+            string resolved = BasePathFixture.WithBasePath(
+                baseDir,
+                () => SpreadsheetMcpServer.Core.Helpers.PathResolver.Resolve(inner)
+            );
+
+            Assert.Equal(Path.GetFullPath(inner), resolved);
+        }
+        finally
+        {
+            Directory.Delete(baseDir);
+        }
+    }
+
+    [Fact]
+    public void PathResolver_ResolveTraversal_EscapesBase_Throws()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            SpreadsheetMcpServer.Core.Helpers.PathResolver.Resolve("../../etc/passwd")
+        );
+    }
+
+    [Fact]
+    public void PathResolver_ResolveAbsoluteOutsideBase_Throws()
+    {
+        // The base is the temp directory (see the class initializer), so the repo's working
+        // directory is guaranteed to be outside it.
+        Assert.Throws<InvalidOperationException>(() =>
+            SpreadsheetMcpServer.Core.Helpers.PathResolver.Resolve(Directory.GetCurrentDirectory())
+        );
+    }
+
+    [Fact]
+    public void ClearRange_NonexistentSheet_Throws()
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            // ClosedXML's Worksheet(name) throws ArgumentException, which the service's catch filter
+            // lets through unwrapped — the lookup has to go through WorkbookReader.GetWorksheet.
+            var ex = Assert.Throws<InvalidOperationException>(() =>
+                _cellService.ClearRange(tempFile, "NoSuchSheet", "A1:B2")
+            );
+            Assert.Contains("NoSuchSheet", ex.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ClearRange_ClearFormats_RemovesCellCarryingOnlyStyling()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"fixture_{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            using (var workbook = new XLWorkbook())
+            {
+                var ws = workbook.Worksheets.Add("Sheet1");
+                ws.Cell("A1").Value = "hdr";
+                // No value — only a fill. This cell is outside the contents-only used range, so it
+                // is exactly the cell clearFormats: true exists to remove.
+                ws.Cell("C3").Style.Fill.BackgroundColor = XLColor.Red;
+                workbook.SaveAs(tempFile);
+            }
+
+            string message = _cellService.ClearRange(tempFile, "Sheet1", "A1:E10", clearFormats: true);
+
+            using var readWorkbook = new XLWorkbook(tempFile);
+            var readWs = readWorkbook.Worksheet("Sheet1");
+            Assert.Contains("C3", message, StringComparison.Ordinal);
+            // Compare against an untouched cell rather than XLColor.NoColor — a cleared fill comes
+            // back as ClosedXML's default indexed color, not "no color".
+            Assert.Equal(readWs.Cell("Z99").Style.Fill.BackgroundColor, readWs.Cell("C3").Style.Fill.BackgroundColor);
+            Assert.NotEqual(XLColor.Red, readWs.Cell("C3").Style.Fill.BackgroundColor);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ClearRange_EmptySheet_ReportsNothingToClear()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"fixture_{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            using (var workbook = new XLWorkbook())
+            {
+                workbook.Worksheets.Add("Sheet1");
+                workbook.SaveAs(tempFile);
+            }
+
+            string message = _cellService.ClearRange(tempFile, "Sheet1", "A1:E10");
+
+            Assert.Contains("No cells to clear", message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ClearRange_ClearFormats_AlsoUnmergesButDefaultKeepsTheMerge()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"fixture_{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            using (var workbook = new XLWorkbook())
+            {
+                var ws = workbook.Worksheets.Add("Sheet1");
+                ws.Cell("A1").Value = "Merged";
+                ws.Range("A1:C1").Merge();
+                workbook.SaveAs(tempFile);
+            }
+
+            // Contents-only clear leaves the merged region in place...
+            _cellService.ClearRange(tempFile, "Sheet1", "A1:C1");
+            using (var afterContents = new XLWorkbook(tempFile))
+                Assert.Single(afterContents.Worksheet("Sheet1").MergedRanges);
+
+            // ...while XLClearOptions.All drops it along with the styling.
+            _cellService.ClearRange(tempFile, "Sheet1", "A1:C1", clearFormats: true);
+            using var afterAll = new XLWorkbook(tempFile);
+            Assert.Empty(afterAll.Worksheet("Sheet1").MergedRanges);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Theory]
+    [InlineData("Infinity")]
+    [InlineData("-Infinity")]
+    [InlineData("NaN")]
+    public void UpdateRange_NonFiniteNumberText_StaysText(string value)
+    {
+        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
+        try
+        {
+            // double.TryParse accepts these, but no cell can hold them — XLCellValue's constructor
+            // throws ArgumentException, which the catch filter would let escape unwrapped.
+            var sheet = new MarkdownSheet { SheetName = "Sheet1", Contents = BuildContents(("A5", value)) };
+
+            _cellService.UpdateRange(tempFile, sheet);
+
+            using var workbook = new XLWorkbook(tempFile);
+            var cell = workbook.Worksheet("Sheet1").Cell("A5");
+            Assert.Equal(XLDataType.Text, cell.DataType);
+            Assert.Equal(value, cell.GetString());
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Theory]
+    [InlineData("007")]
+    [InlineData("1.5")]
+    [InlineData("true")]
+    [InlineData("2026-09-07")]
+    [InlineData("=SUM(A1:A2)")]
+    public void LoadRangeThenUpdateRange_TextThatLooksTyped_SurvivesRoundTrip(string original)
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"fixture_{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            using (var workbook = new XLWorkbook())
+            {
+                var ws = workbook.Worksheets.Add("Sheet1");
+                ws.Cell("A1").SetValue(original); // explicitly a text cell
+                workbook.SaveAs(tempFile);
+            }
+
+            // Read the range and write the unmodified result straight back — the primary
+            // read-modify-write shape. LoadRange must escape the value so it is not re-typed.
+            var read = _cellService.LoadRange(tempFile, "Sheet1", "A1:A1");
+            _cellService.UpdateRange(tempFile, new MarkdownSheet { SheetName = "Sheet1", Contents = read.Contents });
+
+            using var after = new XLWorkbook(tempFile);
+            var cell = after.Worksheet("Sheet1").Cell("A1");
+            Assert.Equal(XLDataType.Text, cell.DataType);
+            Assert.Equal(original, cell.GetString());
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void LoadRangeThenUpdateRange_DateCells_SurviveRoundTrip()
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"fixture_{Guid.NewGuid():N}.xlsx");
+        var date = new DateTime(2026, 9, 7, 0, 0, 0, DateTimeKind.Unspecified);
+        var timestamp = new DateTime(2026, 9, 7, 13, 45, 30, DateTimeKind.Unspecified);
+        try
+        {
+            using (var workbook = new XLWorkbook())
+            {
+                var ws = workbook.Worksheets.Add("Sheet1");
+                ws.Cell("A1").Value = date;
+                ws.Cell("A2").Value = timestamp;
+                workbook.SaveAs(tempFile);
+            }
+
+            var read = _cellService.LoadRange(tempFile, "Sheet1", "A1:A2");
+            var contents = ParseContents(read.Contents);
+
+            // Rendered in an ISO format SetTypedValue recognises, not the culture-invariant default.
+            Assert.Equal("2026-09-07", contents["A1"]);
+            Assert.Equal("2026-09-07 13:45:30", contents["A2"]);
+
+            _cellService.UpdateRange(tempFile, new MarkdownSheet { SheetName = "Sheet1", Contents = read.Contents });
+
+            using var after = new XLWorkbook(tempFile);
+            var ws2 = after.Worksheet("Sheet1");
+            Assert.Equal(XLDataType.DateTime, ws2.Cell("A1").DataType);
+            Assert.Equal(date, ws2.Cell("A1").GetDateTime());
+            Assert.Equal(XLDataType.DateTime, ws2.Cell("A2").DataType);
+            Assert.Equal(timestamp, ws2.Cell("A2").GetDateTime());
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void PathResolver_ResolveBlankPath_Throws(string path)
+    {
+        // Without the guard these resolve to the base directory itself, pass containment, and then
+        // fail deep inside ClosedXML with an opaque message.
+        Assert.Throws<ArgumentException>(() => SpreadsheetMcpServer.Core.Helpers.PathResolver.Resolve(path));
+    }
+
+    [Fact]
+    public void PathResolver_SymlinkInsideBase_IsTrustedAndNotResolved()
+    {
+        string baseDir = Path.Combine(Path.GetTempPath(), $"base_dir_{Guid.NewGuid():N}");
+        string outsideDir = Path.Combine(Path.GetTempPath(), $"outside_dir_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(baseDir);
+        Directory.CreateDirectory(outsideDir);
+        string link = Path.Combine(baseDir, "escape");
+        try
+        {
+            Directory.CreateSymbolicLink(link, outsideDir);
+
+            string resolved = BasePathFixture.WithBasePath(
+                baseDir,
+                () => SpreadsheetMcpServer.Core.Helpers.PathResolver.Resolve("escape/book.xlsx")
+            );
+
+            // Documents the deliberate scope of the guard: the check is lexical, so a symlink placed
+            // inside the base directory is followed at open time. The base directory's contents are
+            // trusted because the operator chooses what to expose; the resolver guards the *path
+            // argument*. If this ever starts throwing, the doc comment on PathResolver must change too.
+            Assert.Equal(Path.Combine(Path.GetFullPath(baseDir), "escape", "book.xlsx"), resolved);
+        }
+        finally
+        {
+            Directory.Delete(link);
+            Directory.Delete(baseDir, recursive: true);
+            Directory.Delete(outsideDir, recursive: true);
         }
     }
 }

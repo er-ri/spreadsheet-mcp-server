@@ -60,6 +60,44 @@ internal static class TestFixtureFactory
     }
 
     /// <summary>
+    /// Creates a workbook exercising ReadCellFormatting:
+    /// A1:D1 — a bold, yellow-filled, centered header run (identical styling across all four cells);
+    /// A2:A10 — a thin-bordered "#,##0" number column (identical styling down all nine cells);
+    /// B5 — italic, standing alone; row 1 height set to 30 and column C width set to 25.
+    /// Everything else is left at the workbook default.
+    /// </summary>
+    public static string CreateStyledWorkbookForFormatReading(string sheetName = "Sheet1")
+    {
+        string tempFile = Path.Combine(Path.GetTempPath(), $"fixture_read_fmt_{Guid.NewGuid():N}.xlsx");
+
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add(sheetName);
+
+        var header = ws.Range("A1:D1");
+        header.Style.Font.Bold = true;
+        header.Style.Fill.BackgroundColor = XLColor.Yellow;
+        header.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+        var numbers = ws.Range("A2:A10");
+        numbers.Style.NumberFormat.Format = "#,##0";
+        // Set all four edges directly (rather than Outside/InsideBorder) so every cell in the column
+        // ends up with identical borders and the block is expected to coalesce into one entry.
+        numbers.Style.Border.TopBorder = XLBorderStyleValues.Thin;
+        numbers.Style.Border.BottomBorder = XLBorderStyleValues.Thin;
+        numbers.Style.Border.LeftBorder = XLBorderStyleValues.Thin;
+        numbers.Style.Border.RightBorder = XLBorderStyleValues.Thin;
+
+        ws.Cell("B5").Style.Font.Italic = true;
+
+        ws.Row(1).Height = 30;
+        ws.Column("C").Width = 25;
+
+        workbook.SaveAs(tempFile);
+
+        return tempFile;
+    }
+
+    /// <summary>
     /// Creates a workbook with one merged region: A1:C2 (value "Merged"), plus D1 = "Solo".
     /// </summary>
     public static string CreateWorkbookWithMergedCells(string sheetName = "Sheet1")

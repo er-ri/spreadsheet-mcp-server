@@ -4,7 +4,7 @@
         <EnableSdkContainerSupport>true</EnableSdkContainerSupport>
         <ContainerRepository>erlizs/spreadsheet-mcp-server</ContainerRepository>
         <ContainerFamily>alpine</ContainerFamily>
-        <ContainerUser>root</ContainerUser>
+        <ContainerUser>1000</ContainerUser>
         <!-- NuGet dotnet tool -->
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>spreadsheet-mcp-server</ToolCommandName>

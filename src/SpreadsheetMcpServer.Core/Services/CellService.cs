@@ -1,6 +1,5 @@
-using System.IO.Compression;
+using System.Globalization;
 using System.Text;
-using System.Xml.Linq;
 using ClosedXML.Excel;
 using SpreadsheetMcpServer.Core.Helpers;
 using SpreadsheetMcpServer.Core.Models;
@@ -12,45 +11,6 @@ namespace SpreadsheetMcpServer.Core.Services;
 /// </summary>
 public class CellService : ICellService
 {
-    // ClosedXML throws when an xlsx shared-strings part contains phonetic run (<rPh>)
-    // elements that are out-of-order or overlapping. Strip all <rPh> nodes before loading.
-    private static Stream SanitizePhoneticRuns(string path)
-    {
-        var ms = new MemoryStream();
-        using (var src = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
-            src.CopyTo(ms);
-
-        using (var zip = new ZipArchive(ms, ZipArchiveMode.Update, leaveOpen: true))
-        {
-            var sharedStrings = zip.GetEntry("xl/sharedStrings.xml");
-            if (sharedStrings != null)
-            {
-                XDocument doc;
-                using (var entryStream = sharedStrings.Open())
-                    doc = XDocument.Load(entryStream);
-
-                XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
-                bool removed = false;
-                foreach (var rPh in doc.Descendants(ns + "rPh").ToList())
-                {
-                    rPh.Remove();
-                    removed = true;
-                }
-
-                if (removed)
-                {
-                    sharedStrings.Delete();
-                    var newEntry = zip.CreateEntry("xl/sharedStrings.xml");
-                    using var writer = new StreamWriter(newEntry.Open());
-                    writer.Write(doc.ToString());
-                }
-            }
-        }
-
-        ms.Position = 0;
-        return ms;
-    }
-
     /// <summary>
     /// Reads non-empty cells from the specified worksheet within the given range and returns them as a
     /// two-column Address/Contents Markdown table (see <see cref="MarkdownSheet.Contents"/>). If the
@@ -69,13 +29,13 @@ public class CellService : ICellService
     {
         try
         {
-            using var sanitized = SanitizePhoneticRuns(spreadSheetPath);
+            using var sanitized = WorkbookReader.SanitizePhoneticRuns(spreadSheetPath);
             using var workbook = new XLWorkbook(sanitized);
-            var worksheet = workbook.Worksheet(spreadSheetName);
+            var worksheet = WorkbookReader.GetWorksheet(workbook, spreadSheetName);
             var contents = new Dictionary<string, string>();
 
             // Determine the effective read range: intersect the requested range with the used range.
-            var bounds = ComputeEffectiveRange(worksheet, range);
+            var bounds = WorkbookReader.ComputeEffectiveRange(worksheet, range);
             if (bounds == null)
                 return new MarkdownSheet
                 {
@@ -105,7 +65,7 @@ public class CellService : ICellService
                 if (cell.DataType == XLDataType.Blank)
                     continue;
 
-                string? value = cell.Value.ToString();
+                string? value = cell.Value.ToString(CultureInfo.InvariantCulture);
                 if (string.IsNullOrEmpty(value))
                     continue;
 
@@ -141,7 +101,7 @@ public class CellService : ICellService
                 Contents = RenderTable(selectedRows),
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not InvalidOperationException and not ArgumentException)
         {
             throw new InvalidOperationException($"Error reading Excel file: {ex.Message}", ex);
         }
@@ -177,7 +137,7 @@ public class CellService : ICellService
 
         try
         {
-            using var sanitized = SanitizePhoneticRuns(spreadSheetPath);
+            using var sanitized = WorkbookReader.SanitizePhoneticRuns(spreadSheetPath);
             using var workbook = new XLWorkbook(sanitized);
 
             var results = new List<MarkdownSheet>();
@@ -212,7 +172,7 @@ public class CellService : ICellService
                     if (cell.DataType == XLDataType.Blank)
                         continue;
 
-                    string? value = cell.Value.ToString();
+                    string? value = cell.Value.ToString(CultureInfo.InvariantCulture);
                     if (string.IsNullOrEmpty(value))
                         continue;
 
@@ -252,7 +212,7 @@ public class CellService : ICellService
 
             return results;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not InvalidOperationException and not ArgumentException)
         {
             throw new InvalidOperationException($"Error reading Excel file: {ex.Message}", ex);
         }
@@ -282,11 +242,11 @@ public class CellService : ICellService
     {
         try
         {
-            using var sanitized = SanitizePhoneticRuns(spreadSheetPath);
+            using var sanitized = WorkbookReader.SanitizePhoneticRuns(spreadSheetPath);
             using var workbook = new XLWorkbook(sanitized);
-            var worksheet = workbook.Worksheet(spreadSheetName);
+            var worksheet = WorkbookReader.GetWorksheet(workbook, spreadSheetName);
 
-            var bounds = ComputeEffectiveRange(worksheet, range);
+            var bounds = WorkbookReader.ComputeEffectiveRange(worksheet, range);
             if (bounds == null)
                 return new MarkdownSheet
                 {
@@ -329,7 +289,7 @@ public class CellService : ICellService
                     continue;
                 }
 
-                string raw = cell.Value.ToString() ?? string.Empty;
+                string raw = cell.Value.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
                 values[(r, c)] = raw.Length == 0 ? string.Empty : ToMarkdown(cell);
             }
 
@@ -366,38 +326,10 @@ public class CellService : ICellService
                 Contents = selected.Table,
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not InvalidOperationException and not ArgumentException)
         {
             throw new InvalidOperationException($"Error reading Excel file: {ex.Message}", ex);
         }
-    }
-
-    /// <summary>
-    /// Intersects the requested <paramref name="range"/> with the worksheet's used range and returns the
-    /// resulting (firstRow, firstCol, lastRow, lastCol) bounds, or <c>null</c> when the sheet has no used
-    /// range or the intersection is empty. Shared by <see cref="LoadRange"/> and
-    /// <see cref="LoadRangeInMarkdownTable"/>.
-    /// </summary>
-    private static (int FirstRow, int FirstCol, int LastRow, int LastCol)? ComputeEffectiveRange(
-        IXLWorksheet worksheet,
-        string range
-    )
-    {
-        var requestedRange = worksheet.Range(range);
-        var usedRangeAddress = worksheet.RangeUsed()?.RangeAddress;
-        if (usedRangeAddress == null)
-            return null;
-
-        var usedRange = worksheet.Range(usedRangeAddress.ToStringRelative(false));
-        int firstRow = Math.Max(requestedRange.FirstRow().RowNumber(), usedRange.FirstRow().RowNumber());
-        int firstCol = Math.Max(requestedRange.FirstColumn().ColumnNumber(), usedRange.FirstColumn().ColumnNumber());
-        int lastRow = Math.Min(requestedRange.LastRow().RowNumber(), usedRange.LastRow().RowNumber());
-        int lastCol = Math.Min(requestedRange.LastColumn().ColumnNumber(), usedRange.LastColumn().ColumnNumber());
-
-        if (firstRow > lastRow || firstCol > lastCol)
-            return null;
-
-        return (firstRow, firstCol, lastRow, lastCol);
     }
 
     /// <summary>
@@ -461,7 +393,7 @@ public class CellService : ICellService
         separator.Append(" --- |");
         for (int c = firstCol; c <= tightLastCol; c++)
         {
-            headerCells.Append($" {CellReferenceParser.IndexToColumnLetter(c)} |");
+            headerCells.Append(CultureInfo.InvariantCulture, $" {CellReferenceParser.IndexToColumnLetter(c)} |");
             separator.Append(" --- |");
         }
 
@@ -475,7 +407,7 @@ public class CellService : ICellService
         {
             var rowBuilder = new StringBuilder($"\n| {r} |");
             for (int c = firstCol; c <= tightLastCol; c++)
-                rowBuilder.Append($" {EscapeTableCell(values[(r, c)])} |");
+                rowBuilder.Append(CultureInfo.InvariantCulture, $" {EscapeTableCell(values[(r, c)])} |");
 
             if (truncate > 0 && length + rowBuilder.Length > truncate)
                 break;
@@ -539,7 +471,7 @@ public class CellService : ICellService
     {
         var sb = new StringBuilder(TableHeader);
         foreach (var (address, markdown) in rows)
-            sb.Append($"\n| {address} | {EscapeTableCell(markdown)} |");
+            sb.Append(CultureInfo.InvariantCulture, $"\n| {address} | {EscapeTableCell(markdown)} |");
         return sb.ToString();
     }
 
@@ -549,7 +481,7 @@ public class CellService : ICellService
     /// Each address is a single cell ("B3") or a merged range ("AD629:AL638"); both endpoints of a
     /// range are considered. Returns <paramref name="fallback"/> when there are no rows.
     /// </summary>
-    private static string BoundingBox(IReadOnlyList<(string Address, string Markdown)> rows, string fallback)
+    private static string BoundingBox(List<(string Address, string Markdown)> rows, string fallback)
     {
         if (rows.Count == 0)
             return fallback;
@@ -562,7 +494,7 @@ public class CellService : ICellService
         foreach (var (address, _) in rows)
         foreach (string endpoint in address.Split(':'))
         {
-            int row = (int)CellReferenceParser.GetRowIndex(endpoint);
+            int row = CellReferenceParser.GetRowIndex(endpoint);
             int col = CellReferenceParser.ColumnLetterToIndex(CellReferenceParser.GetColumnName(endpoint));
             minRow = Math.Min(minRow, row);
             maxRow = Math.Max(maxRow, row);
@@ -661,6 +593,13 @@ public class CellService : ICellService
     /// Renders a cell's text as Markdown. When the cell carries rich text, each run is wrapped
     /// individually so partial formatting is preserved (e.g. "sample **string**"). Otherwise the
     /// whole-cell font style is applied to the entire value.
+    /// <para>
+    /// The rendering is chosen so that feeding the result straight back through
+    /// <see cref="UpdateRange"/> reproduces the original cell: a date is written in the ISO shape
+    /// <see cref="SetTypedValue"/> parses, and a *text* cell whose content would otherwise be re-typed
+    /// (a zip code like "007", "true", "2026-09-07") is prefixed with "'" — the escape
+    /// <see cref="SetTypedValue"/> already honours.
+    /// </para>
     /// </summary>
     private static string ToMarkdown(IXLCell cell)
     {
@@ -672,9 +611,30 @@ public class CellService : ICellService
             return sb.ToString();
         }
 
-        string value = cell.Value.ToString() ?? string.Empty;
+        string value = RenderValue(cell);
         var font = cell.Style.Font;
         return WrapMarkdown(value, font.Bold, font.Italic, font.Strikethrough);
+    }
+
+    /// <summary>
+    /// Renders a non-rich cell's value as the string <see cref="SetTypedValue"/> would turn back into
+    /// that same cell. Dates use an ISO format from <see cref="SupportedDateFormats"/>; a text cell that
+    /// would otherwise be re-typed gets a "'" escape. Every other type renders invariantly.
+    /// </summary>
+    private static string RenderValue(IXLCell cell)
+    {
+        if (cell.DataType == XLDataType.DateTime)
+        {
+            var date = cell.GetDateTime();
+            return date.TimeOfDay == TimeSpan.Zero
+                ? date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                : date.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        }
+
+        string value = cell.Value.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+
+        // Only genuine text needs escaping — a number, boolean or date already round-trips as itself.
+        return cell.DataType == XLDataType.Text && WouldBeTyped(value) ? "'" + value : value;
     }
 
     /// <summary>
@@ -702,7 +662,9 @@ public class CellService : ICellService
     /// <see cref="MarkdownSheet.Contents"/> two-column table is parsed row by row; each Address is a
     /// single cell address (e.g. "A1") or a merged range address (e.g. "AD629:AL638"); range keys are
     /// merged and the value written to the anchor (top-left) cell. Inline Markdown is converted to
-    /// rich text: "**text**" → bold, "*text*" → italic, "~~text~~" → strikethrough.
+    /// rich text: "**text**" → bold, "*text*" → italic, "~~text~~" → strikethrough. A value without
+    /// Markdown styling is written as a typed cell — "=…" becomes a formula, numbers, booleans and
+    /// ISO dates keep their natural types (see <see cref="SetTypedValue"/>).
     /// </summary>
     public void UpdateRange(string spreadSheetPath, MarkdownSheet sheet)
     {
@@ -715,8 +677,11 @@ public class CellService : ICellService
 
         try
         {
-            using var workbook = new XLWorkbook(spreadSheetPath);
-            var worksheet = workbook.Worksheet(sheet.SheetName);
+            // Load through the phonetic-run sanitizer like every other path that reads existing
+            // content, then SaveAs back over the file (Save() would target the in-memory stream).
+            using var sanitized = WorkbookReader.SanitizePhoneticRuns(spreadSheetPath);
+            using var workbook = new XLWorkbook(sanitized);
+            var worksheet = WorkbookReader.GetWorksheet(workbook, sheet.SheetName);
 
             foreach (var (address, markdown) in rows)
             {
@@ -738,28 +703,73 @@ public class CellService : ICellService
                 WriteMarkdown(cell, markdown);
             }
 
-            workbook.Save();
+            workbook.SaveAs(spreadSheetPath);
         }
-        catch (Exception ex) when (ex is not InvalidOperationException)
+        catch (Exception ex) when (ex is not InvalidOperationException and not ArgumentException)
         {
             throw new InvalidOperationException($"Error updating Excel file: {ex.Message}", ex);
         }
     }
 
+    /// <inheritdoc />
+    public string ClearRange(string spreadSheetPath, string spreadSheetName, string range, bool clearFormats = false)
+    {
+        try
+        {
+            using var sanitized = WorkbookReader.SanitizePhoneticRuns(spreadSheetPath);
+            using var workbook = new XLWorkbook(sanitized);
+            var worksheet = WorkbookReader.GetWorksheet(workbook, spreadSheetName);
+
+            // Resolve the requested range against the used range so we never churn cells that carry
+            // nothing (clearing far beyond the content can also resave a larger sheet than intended).
+            // When formats are being cleared, a cell carrying only styling is exactly what we are
+            // asked to remove, so it has to count as "used" — otherwise it falls outside the bounds
+            // and survives the clear.
+            var bounds = WorkbookReader.ComputeEffectiveRange(
+                worksheet,
+                range,
+                clearFormats ? XLCellsUsedOptions.All : null
+            );
+            if (bounds == null)
+                return $"No cells to clear in '{spreadSheetName}'.";
+
+            var (firstRow, firstCol, lastRow, lastCol) = bounds.Value;
+            var target = worksheet.Range(firstRow, firstCol, lastRow, lastCol);
+            target.Clear(clearFormats ? XLClearOptions.All : XLClearOptions.Contents);
+
+            workbook.SaveAs(spreadSheetPath);
+            return $"Cleared {target.RangeAddress.ToStringRelative(false)} in '{spreadSheetName}'.";
+        }
+        catch (Exception ex) when (ex is not InvalidOperationException and not ArgumentException)
+        {
+            throw new InvalidOperationException($"Error clearing Excel file: {ex.Message}", ex);
+        }
+    }
+
     /// <summary>
-    /// Clears <paramref name="cell"/> and writes <paramref name="markdown"/> as rich text, parsing
-    /// inline Markdown into runs. This is the inverse of <see cref="WrapMarkdown"/>: "**text**" →
-    /// bold, "*text*" → italic, "~~text~~" → strikethrough, with combined markers composing onto a
-    /// single run (e.g. "***text***" → bold + italic). Text outside any marker is written plain.
+    /// Clears <paramref name="cell"/> and writes <paramref name="markdown"/>. This is the inverse of
+    /// <see cref="WrapMarkdown"/>: "**text**" → bold, "*text*" → italic, "~~text~~" → strikethrough,
+    /// with combined markers composing onto a single run (e.g. "***text***" → bold + italic).
+    /// A value with no styling markers is written with its natural type instead of rich text, so
+    /// "=…" becomes a formula, a number stays numeric, "true"/"false" become booleans and ISO dates
+    /// become date cells. Prefix a value with "'" to force literal text.
     /// </summary>
     private static void WriteMarkdown(IXLCell cell, string markdown)
     {
         cell.Clear(XLClearOptions.Contents);
 
+        var runs = ParseMarkdown(markdown);
+
+        if (runs.Count == 1 && !runs[0].Bold && !runs[0].Italic && !runs[0].Strikethrough)
+        {
+            SetTypedValue(cell, runs[0].Text);
+            return;
+        }
+
         var richText = cell.GetRichText();
         richText.ClearText();
 
-        foreach (var (text, bold, italic, strikethrough) in ParseMarkdown(markdown))
+        foreach (var (text, bold, italic, strikethrough) in runs)
         {
             var run = richText.AddText(text);
             if (bold)
@@ -769,6 +779,106 @@ public class CellService : ICellService
             if (strikethrough)
                 run.SetStrikethrough(true);
         }
+    }
+
+    /// <summary>
+    /// Recognized date shapes ("yyyy-MM-dd", "yyyy/MM/dd", "M/d/yyyy", "MM/dd/yyyy", with an
+    /// optional time part) accepted by <see cref="SetTypedValue"/>. Kept as a static readonly array
+    /// because <see cref="DateTime.TryParseExact(string, string[], ...)"/> is called per cell.
+    /// </summary>
+    private static readonly string[] SupportedDateFormats =
+    [
+        "yyyy-MM-dd",
+        "yyyy/MM/dd",
+        "M/d/yyyy",
+        "MM/dd/yyyy",
+        "yyyy-MM-dd HH:mm:ss",
+        "yyyy/MM/dd HH:mm:ss",
+        "yyyy-MM-ddTHH:mm:ss",
+    ];
+
+    /// <summary>
+    /// Whether <see cref="SetTypedValue"/> would give <paramref name="text"/> a type other than plain
+    /// text — i.e. whether writing it back unescaped would change the cell's type. <see cref="ToMarkdown"/>
+    /// uses this to decide when a text cell needs a "'" prefix so that a LoadRange → UpdateRange round
+    /// trip leaves the value untouched; keep it in step with the branches of <see cref="SetTypedValue"/>.
+    /// </summary>
+    private static bool WouldBeTyped(string text) =>
+        text.Length > 0
+        && (
+            text[0] is '=' or '\''
+            || bool.TryParse(text, out _)
+            || (
+                double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double number)
+                && double.IsFinite(number)
+            )
+            || DateTime.TryParseExact(
+                text,
+                SupportedDateFormats,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out _
+            )
+        );
+
+    /// <summary>
+    /// Writes a single unformatted string into <paramref name="cell"/> as a typed value: "=…" becomes a
+    /// formula (via <see cref="IXLCell.FormulaA1"/>), a parseable number stays numeric, "true"/"false"
+    /// become a boolean, and an ISO-ish date becomes a <see cref="DateTime"/>. A leading apostrophe
+    /// escapes the rest of the string so values that would otherwise be typed stay literal text.
+    /// </summary>
+    private static void SetTypedValue(IXLCell cell, string text)
+    {
+        if (text.Length == 0)
+        {
+            cell.Value = string.Empty;
+            return;
+        }
+
+        if (text[0] == '=')
+        {
+            cell.FormulaA1 = text[1..];
+            return;
+        }
+
+        if (text[0] == '\'')
+        {
+            cell.Value = text[1..];
+            return;
+        }
+
+        if (bool.TryParse(text, out bool boolean))
+        {
+            cell.Value = boolean;
+            return;
+        }
+
+        // TryParse accepts "Infinity"/"NaN", which no cell can hold — those stay literal text rather
+        // than throwing out of ClosedXML's value constructor.
+        if (
+            double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double number)
+            && double.IsFinite(number)
+        )
+        {
+            cell.Value = number;
+            return;
+        }
+
+        if (
+            DateTime.TryParseExact(
+                text,
+                SupportedDateFormats,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out DateTime date
+            )
+        )
+        {
+            cell.Value = date;
+            return;
+        }
+
+        cell.Value = text;
     }
 
     /// <summary>

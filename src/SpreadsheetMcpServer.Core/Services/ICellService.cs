@@ -62,7 +62,18 @@ public interface ICellService
     /// <see cref="MarkdownSheet.Contents"/> key is a cell address (e.g. "A1") or a merged range
     /// address (e.g. "AD629:AL638"); range keys are merged and the value written to the anchor cell.
     /// Inline Markdown is converted to rich text: "**text**" → bold, "*text*" → italic,
-    /// "~~text~~" → strikethrough.
+    /// "~~text~~" → strikethrough. A value without Markdown styling is written as a typed cell —
+    /// "=…" becomes a formula, and numbers, booleans and ISO dates keep their natural types.
     /// </summary>
     void UpdateRange(string spreadSheetPath, MarkdownSheet sheet);
+
+    /// <summary>
+    /// Removes the contents of every cell in <paramref name="range"/> of
+    /// <paramref name="spreadSheetName"/>. If the requested range is larger than the sheet's used range,
+    /// only the used range is cleared. When <paramref name="clearFormats"/> is true the cells are wiped
+    /// completely instead — styling, borders and number formats, but also merged regions, data
+    /// validation, conditional formats and comments — and cells carrying only styling count as used, so
+    /// a format-only banner row inside the range is cleared too. Returns a confirmation message.
+    /// </summary>
+    string ClearRange(string spreadSheetPath, string spreadSheetName, string range, bool clearFormats = false);
 }
