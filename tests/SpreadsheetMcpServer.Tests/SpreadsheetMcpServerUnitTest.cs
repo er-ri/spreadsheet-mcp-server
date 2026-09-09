@@ -13,7 +13,6 @@ public class SpreadsheetMcpServerUnitTest
     private readonly IWorksheetService _worksheetService = new WorksheetService();
     private readonly ICellService _cellService = new CellService();
     private readonly ITableService _tableService = new TableService();
-    private readonly ISpreadsheetExportService _exportService = new SpreadsheetExportService();
     private readonly IPictureService _pictureService = new PictureService();
     private readonly ICellFormatService _cellFormatService = new CellFormatService();
 
@@ -654,90 +653,6 @@ public class SpreadsheetMcpServerUnitTest
             // The merged-range key is merged and emitted under its full range address.
             Assert.Equal("Merged string", contents["D5:E6"]);
             Assert.False(contents.ContainsKey("D5"));
-        }
-        finally
-        {
-            File.Delete(tempFile);
-        }
-    }
-
-    [Fact]
-    public void ExportJsonArray_CreatesNewFileWithHeadersAndRows()
-    {
-        string tempFile = Path.Combine(Path.GetTempPath(), $"export_{Guid.NewGuid():N}.xlsx");
-        try
-        {
-            const string json = """[{"Name":"Alice","Age":30},{"Name":"Bob","Age":25}]""";
-
-            _exportService.ExportJsonArrayToSpreadSheet(tempFile, "People", json);
-
-            using var workbook = new XLWorkbook(tempFile);
-            var sheet = workbook.Worksheet("People");
-
-            Assert.Equal("Name", sheet.Cell("A1").GetString());
-            Assert.Equal("Age", sheet.Cell("B1").GetString());
-            Assert.Equal("Alice", sheet.Cell("A2").GetString());
-            Assert.Equal("Bob", sheet.Cell("A3").GetString());
-        }
-        finally
-        {
-            File.Delete(tempFile);
-        }
-    }
-
-    [Fact]
-    public void ExportJsonSingleObject_CreatesSheetWithOneRow()
-    {
-        string tempFile = Path.Combine(Path.GetTempPath(), $"export_{Guid.NewGuid():N}.xlsx");
-        try
-        {
-            const string json = """{"Name":"Alice","Age":30}""";
-
-            _exportService.ExportJsonArrayToSpreadSheet(tempFile, "People", json);
-
-            using var workbook = new XLWorkbook(tempFile);
-            var sheet = workbook.Worksheet("People");
-
-            Assert.Equal("Name", sheet.Cell("A1").GetString());
-            Assert.Equal("Alice", sheet.Cell("A2").GetString());
-        }
-        finally
-        {
-            File.Delete(tempFile);
-        }
-    }
-
-    [Fact]
-    public void ExportJsonArray_AppendsSheetToExistingWorkbook()
-    {
-        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Existing");
-        try
-        {
-            const string json = """[{"City":"Paris","Pop":2000000}]""";
-
-            _exportService.ExportJsonArrayToSpreadSheet(tempFile, "Cities", json);
-
-            using var workbook = new XLWorkbook(tempFile);
-            Assert.True(workbook.TryGetWorksheet("Existing", out _));
-            Assert.True(workbook.TryGetWorksheet("Cities", out _));
-        }
-        finally
-        {
-            File.Delete(tempFile);
-        }
-    }
-
-    [Fact]
-    public void ExportJsonArray_ThrowsWhenSheetAlreadyExists()
-    {
-        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
-        try
-        {
-            const string json = """[{"Name":"Alice"}]""";
-
-            Assert.Throws<InvalidOperationException>(() =>
-                _exportService.ExportJsonArrayToSpreadSheet(tempFile, "Sheet1", json)
-            );
         }
         finally
         {

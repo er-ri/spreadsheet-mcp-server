@@ -62,7 +62,6 @@ Add the configuration snippet to your MCP client's settings file (e.g. `.mcp.jso
 | `UpdateRange` | Writes a Markdown `Address \| Contents` table back into a worksheet — the inverse of `LoadRange`. Range addresses merge the region; `**bold**`, `*italic*` and `~~strike~~` become cell formatting. Unformatted values are written with their natural type: `=…` becomes a formula, numbers stay numeric, `true`/`false` become booleans, and ISO dates become date cells. |
 | `ClearRange` | Removes the values of a range of cells — the inverse of `UpdateRange` for deletions. With `clearFormats`, wipes the cells completely instead: styling and number formats, but also merged regions, data validation and comments. |
 | `ManageTables` | Gets, creates, or deletes an Excel table on a worksheet. For 'create', converts a range into a named table with auto-filter and optional banding — write the data rows with `UpdateRange` first. |
-| `ExportJsonToSpreadSheet` | Exports a JSON array (or single object) to a new worksheet. Creates the file if it does not exist; throws if a sheet with that name already exists. |
 | `GetPictures` | Returns the first picture anchored within a range as an image the model can view directly. |
 | `PastePictures` | Inserts one or more image files into a worksheet at given anchor cells, with optional pixel dimensions. |
 | `ApplyCellFormatting` | Applies fonts, colors, alignment, borders, number formats, and row/column sizes to cells or ranges. |

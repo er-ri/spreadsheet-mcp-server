@@ -18,7 +18,6 @@ public static class ToolEntry
     private static readonly IWorksheetService _worksheetService = new WorksheetService();
     private static readonly ICellService _cellService = new CellService();
     private static readonly ITableService _tableService = new TableService();
-    private static readonly ISpreadsheetExportService _exportService = new SpreadsheetExportService();
     private static readonly IPictureService _pictureService = new PictureService();
     private static readonly ICellFormatService _cellFormatService = new CellFormatService();
 
@@ -174,18 +173,6 @@ public static class ToolEntry
         Description(
             "Export a JSON array (or single object) to a new worksheet in an Excel file. "
                 + "Creates the file if it does not exist. Throws if a sheet with the same name already exists."
-        )
-    ]
-    public static void ExportJsonToSpreadSheet(string spreadSheetPath, string sheetName, string json) =>
-        _exportService.ExportJsonArrayToSpreadSheet(PathResolver.Resolve(spreadSheetPath), sheetName, json);
-
-    [
-        McpServerTool,
-        Description(
-            "Return the first picture whose anchor (top-left) cell falls within the given range, as an image the model can view directly. "
-                + "The range parameter is required (e.g. 'A1:C5'). "
-                + "'First' follows the worksheet's picture order. "
-                + "Returns null when no picture is anchored within the range."
         )
     ]
     public static ImageContentBlock? GetPictures(string spreadSheetPath, string spreadSheetName, string range)
