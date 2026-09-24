@@ -25,6 +25,13 @@ Add the configuration snippet to your MCP client's settings file (e.g. `.mcp.jso
 
 > Replace `/path/to/your/folder` with the folder containing your `.xlsx` files.
 >
+> The published image already sets `IS_DOCKER=true`, so the server knows it's running in a
+> container: the MCP client (e.g. Claude Code) sees your host's own file paths, but the container
+> only sees the mounted folder at `SPREADSHEET_BASE_PATH`. When a tool is called with an absolute
+> host path that falls outside `SPREADSHEET_BASE_PATH`, the server rewrites it to that path's file
+> name resolved under `SPREADSHEET_BASE_PATH` (e.g. `/home/alice/sheets/book.xlsx` becomes
+> `/data/book.xlsx`) instead of rejecting it — so keep filenames unique within the mounted folder.
+>
 > The container runs as UID 1000 (non-root), so the mounted folder must be readable and
 > writable by that user. If your host files are owned by a different UID, run `id -u` and
 > `id -g` to find yours and pass them to `--user` as literal numbers. MCP clients launch

@@ -1,6 +1,6 @@
 {
   "permissions": {
-    "defaultMode": "acceptEdits",
+    "defaultMode": "auto",
     "allow": [],
     "deny": ["Bash(git push *)"]
   },
@@ -17,11 +17,5 @@
         ]
       }
     ]
-  },
-  "autoMode": {
-    "environment": ["$defaults", "Source control: github.com/er-ri/spreadsheet-mcp-server.git"]
-  },
-  "env": {
-    "CLAUDE_CODE_ENABLE_AUTO_MODE": "1"
   }
 }

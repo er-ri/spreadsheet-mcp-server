@@ -26,6 +26,12 @@
     </ItemGroup>
 
     <ItemGroup>
+        <!-- Lets PathResolver detect it is running in the published container so it can rewrite
+             host-native absolute paths from the MCP client onto SPREADSHEET_BASE_PATH. -->
+        <ContainerEnvironmentVariable Include="IS_DOCKER" Value="true" />
+    </ItemGroup>
+
+    <ItemGroup>
         <ProjectReference Include="..\SpreadsheetMcpServer.Core\SpreadsheetMcpServer.Core.csproj" />
     </ItemGroup>
 </Project>

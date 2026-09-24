@@ -14,6 +14,14 @@ namespace SpreadsheetMcpServer.Core.Helpers;
 /// guard against a mistaken or malicious *path argument*, not a sandbox against the directory's own
 /// contents.
 /// </para>
+/// <para>
+/// When running in Docker (<c>IS_DOCKER</c> set), the MCP host and the container see the filesystem
+/// differently: the host passes its own native absolute paths (e.g. <c>/home/alice/book.xlsx</c>),
+/// but the container only has the mounted folder at <c>SPREADSHEET_BASE_PATH</c> (e.g. <c>/data</c>).
+/// Rather than rejecting such a path as escaping the base, it is rewritten to just its file name
+/// resolved under the base directory (e.g. <c>/data/book.xlsx</c>). Relative paths, including
+/// traversal attempts, are never rewritten — that rewrite only applies to absolute paths.
+/// </para>
 /// </summary>
 public static class PathResolver
 {
@@ -25,10 +33,20 @@ public static class PathResolver
         Environment.GetEnvironmentVariable("SPREADSHEET_BASE_PATH") ?? Directory.GetCurrentDirectory();
 
     /// <summary>
+    /// Returns whether the server is running inside a Docker container, as declared by the
+    /// <c>IS_DOCKER</c> environment variable (<c>"true"</c> or <c>"1"</c>, case-insensitive).
+    /// </summary>
+    public static bool IsRunningInDocker() =>
+        Environment.GetEnvironmentVariable("IS_DOCKER") is { } value
+        && (value.Equals("true", StringComparison.OrdinalIgnoreCase) || value == "1");
+
+    /// <summary>
     /// Resolves <paramref name="path"/> to an absolute path inside
     /// <see cref="GetWorkingDirectory"/>. Relative paths are combined with the base directory;
     /// absolute paths must already lie under it. Throws <see cref="InvalidOperationException"/> when
-    /// the resolved path falls outside the base directory.
+    /// the resolved path falls outside the base directory, unless <see cref="IsRunningInDocker"/> is
+    /// true and the path is absolute, in which case it is rewritten to its file name under the base
+    /// directory instead of being rejected.
     /// </summary>
     public static string Resolve(string path)
     {
@@ -37,14 +55,16 @@ public static class PathResolver
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
         string basePath = Path.GetFullPath(GetWorkingDirectory());
+        bool isRooted = Path.IsPathRooted(path);
 
-        string resolved = Path.IsPathRooted(path)
-            ? Path.GetFullPath(path)
-            : Path.GetFullPath(Path.Combine(basePath, path));
+        string resolved = isRooted ? Path.GetFullPath(path) : Path.GetFullPath(Path.Combine(basePath, path));
 
         string relative = Path.GetRelativePath(basePath, resolved);
         bool escapesBase =
             relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) || relative == "..";
+        if (escapesBase && isRooted && IsRunningInDocker())
+            return Path.GetFullPath(Path.Combine(basePath, Path.GetFileName(path)));
+
         if (escapesBase)
             throw new InvalidOperationException(
                 $"Path '{path}' resolves outside the allowed base directory '{basePath}'. "

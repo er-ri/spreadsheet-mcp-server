@@ -2175,6 +2175,95 @@ public class SpreadsheetMcpServerUnitTest
     }
 
     [Fact]
+    public void PathResolver_ResolveAbsoluteOutsideBase_WithIsDockerUnset_StillThrows()
+    {
+        string? previousIsDocker = Environment.GetEnvironmentVariable("IS_DOCKER");
+        try
+        {
+            Environment.SetEnvironmentVariable("IS_DOCKER", null);
+            Assert.Throws<InvalidOperationException>(() =>
+                SpreadsheetMcpServer.Core.Helpers.PathResolver.Resolve(Directory.GetCurrentDirectory())
+            );
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("IS_DOCKER", previousIsDocker);
+        }
+    }
+
+    [Fact]
+    public void PathResolver_ResolveAbsoluteOutsideBase_WithIsDocker_RewritesToBasenameUnderBase()
+    {
+        string baseDir = Path.Combine(Path.GetTempPath(), $"base_dir_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(baseDir);
+        string? previousIsDocker = Environment.GetEnvironmentVariable("IS_DOCKER");
+        try
+        {
+            Environment.SetEnvironmentVariable("IS_DOCKER", "true");
+            string hostPath = Path.Combine(
+                Path.DirectorySeparatorChar == '\\' ? "C:\\host\\sheets" : "/home/alice/sheets",
+                "book.xlsx"
+            );
+
+            string resolved = BasePathFixture.WithBasePath(
+                baseDir,
+                () => SpreadsheetMcpServer.Core.Helpers.PathResolver.Resolve(hostPath)
+            );
+
+            Assert.Equal(Path.Combine(Path.GetFullPath(baseDir), "book.xlsx"), resolved);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("IS_DOCKER", previousIsDocker);
+            Directory.Delete(baseDir);
+        }
+    }
+
+    [Fact]
+    public void PathResolver_ResolveTraversal_WithIsDocker_StillThrows()
+    {
+        string? previousIsDocker = Environment.GetEnvironmentVariable("IS_DOCKER");
+        try
+        {
+            Environment.SetEnvironmentVariable("IS_DOCKER", "true");
+
+            // Relative traversal is never rewritten, even in Docker mode — only absolute host paths are.
+            Assert.Throws<InvalidOperationException>(() =>
+                SpreadsheetMcpServer.Core.Helpers.PathResolver.Resolve("../../etc/passwd")
+            );
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("IS_DOCKER", previousIsDocker);
+        }
+    }
+
+    [Fact]
+    public void PathResolver_ResolveAbsoluteInsideBase_WithIsDocker_UnaffectedByRewrite()
+    {
+        string baseDir = Path.Combine(Path.GetTempPath(), $"base_dir_{Guid.NewGuid():N}");
+        string inner = Path.Combine(baseDir, "inner.xlsx");
+        Directory.CreateDirectory(baseDir);
+        string? previousIsDocker = Environment.GetEnvironmentVariable("IS_DOCKER");
+        try
+        {
+            Environment.SetEnvironmentVariable("IS_DOCKER", "true");
+
+            string resolved = BasePathFixture.WithBasePath(
+                baseDir,
+                () => SpreadsheetMcpServer.Core.Helpers.PathResolver.Resolve(inner)
+            );
+
+            Assert.Equal(Path.GetFullPath(inner), resolved);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("IS_DOCKER", previousIsDocker);
+            Directory.Delete(baseDir);
+        }
+    }
+
+    [Fact]
     public void ClearRange_NonexistentSheet_Throws()
     {
         string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");

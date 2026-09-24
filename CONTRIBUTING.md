@@ -43,6 +43,8 @@ dotnet run --project src/SpreadsheetMcpServer/SpreadsheetMcpServer.csproj
 
 Set `SPREADSHEET_BASE_PATH` to control which directory the server resolves relative file paths against. Without it, the working directory is used.
 
+Set `IS_DOCKER=true` when the server runs in a container that sees a different filesystem than the MCP host — the published container image sets this automatically. When set, an absolute path that escapes `SPREADSHEET_BASE_PATH` is rewritten to its file name resolved under `SPREADSHEET_BASE_PATH` instead of being rejected (see `PathResolver.Resolve`); relative paths, including `../` traversal, are never rewritten.
+
 ## Adding a new MCP tool
 
 1. Add the interface method and implementation in `SpreadsheetMcpServer.Core/Services/`.
