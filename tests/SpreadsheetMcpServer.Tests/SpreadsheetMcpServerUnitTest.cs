@@ -2648,45 +2648,6 @@ public class SpreadsheetMcpServerUnitTest
     }
 
     [Fact]
-    public void ManageFreezePanes_Set_FreezesRowsAndColumnsAboveAndLeftOfAnchor()
-    {
-        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
-        try
-        {
-            _worksheetService.ManageFreezePanes(tempFile, "Sheet1", "set", "B2");
-
-            using var workbook = new XLWorkbook(tempFile);
-            var ws = workbook.Worksheet("Sheet1");
-            Assert.Equal(1, ws.SheetView.SplitRow);
-            Assert.Equal(1, ws.SheetView.SplitColumn);
-        }
-        finally
-        {
-            File.Delete(tempFile);
-        }
-    }
-
-    [Fact]
-    public void ManageFreezePanes_Clear_RemovesExistingFreeze()
-    {
-        string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");
-        try
-        {
-            _worksheetService.ManageFreezePanes(tempFile, "Sheet1", "set", "B2");
-            _worksheetService.ManageFreezePanes(tempFile, "Sheet1", "clear");
-
-            using var workbook = new XLWorkbook(tempFile);
-            var ws = workbook.Worksheet("Sheet1");
-            Assert.Equal(0, ws.SheetView.SplitRow);
-            Assert.Equal(0, ws.SheetView.SplitColumn);
-        }
-        finally
-        {
-            File.Delete(tempFile);
-        }
-    }
-
-    [Fact]
     public void ManageRowsColumns_InsertRows_ShiftsExistingContentDown()
     {
         string tempFile = TestFixtureFactory.CreateSimpleWorkbook("Sheet1");

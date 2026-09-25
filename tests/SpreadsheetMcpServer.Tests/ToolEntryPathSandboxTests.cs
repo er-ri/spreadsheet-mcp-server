@@ -43,7 +43,7 @@ public class ToolEntryPathSandboxTests
     {
         // A guard on the guard: if the reflection filter ever stops matching (a renamed parameter,
         // a changed attribute), the theory below would silently shrink to zero cases and pass.
-        Assert.Equal(16, ToolsTakingASpreadsheetPath.Count);
+        Assert.Equal(15, ToolsTakingASpreadsheetPath.Count);
     }
 
     [Theory]
