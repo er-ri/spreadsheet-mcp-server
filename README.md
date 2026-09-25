@@ -73,7 +73,6 @@ Add the configuration snippet to your MCP client's settings file (e.g. `.mcp.jso
 | `PastePictures` | Inserts one or more image files into a worksheet at given anchor cells, with optional pixel dimensions. |
 | `ApplyCellFormatting` | Applies fonts, colors, alignment, borders, number formats, and row/column sizes to cells or ranges. |
 | `ReadCellFormatting` | Reads a worksheet's styling back out in the same shape `ApplyCellFormatting` accepts, so styling can be inspected or copied. Default-styled cells are omitted and identically-styled neighbours are reported as one range. |
-| `ManageFreezePanes` | Sets or clears frozen panes on a worksheet. For 'set', freezes every row above and column left of the given anchor cell. |
 | `ManageRowsColumns` | Inserts or deletes whole rows or columns on a worksheet, shifting subsequent cells to make room or fill the gap. |
 | `ManageMerge` | Merges or unmerges a range of cells on a worksheet. |
 | `AutofitRange` | Auto-sizes column widths and/or row heights within a range to fit their contents. |

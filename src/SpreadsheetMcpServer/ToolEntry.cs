@@ -249,28 +249,6 @@ public static class ToolEntry
     [
         McpServerTool,
         Description(
-            "Freezes or unfreezes panes on a worksheet. "
-                + "'action' must be 'set' or 'clear'. "
-                + "For 'set', 'freezeAtAddress' (e.g. 'B2') freezes all rows above and columns left of that cell. "
-                + "Returns a confirmation message."
-        )
-    ]
-    public static string ManageFreezePanes(
-        string spreadSheetPath,
-        string spreadSheetName,
-        string action,
-        string? freezeAtAddress = null
-    ) =>
-        _worksheetService.ManageFreezePanes(
-            PathResolver.Resolve(spreadSheetPath),
-            spreadSheetName,
-            action,
-            freezeAtAddress
-        );
-
-    [
-        McpServerTool,
-        Description(
             "Inserts or deletes whole rows or columns on a worksheet, shifting subsequent cells. "
                 + "'action' must be 'insertRows', 'deleteRows', 'insertColumns', or 'deleteColumns'. "
                 + "'target' is the 1-based row number or column letter where the operation applies; "

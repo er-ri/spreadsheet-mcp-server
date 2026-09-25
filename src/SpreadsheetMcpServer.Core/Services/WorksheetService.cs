@@ -102,52 +102,6 @@ public class WorksheetService : IWorksheetService
     }
 
     /// <summary>
-    /// Sets or clears frozen panes on a worksheet. 'action' must be "set" or "clear". For "set",
-    /// 'freezeAtAddress' is required and freezes every row above and column left of that cell.
-    /// For "clear", any existing freeze is removed. Returns a confirmation message.
-    /// </summary>
-    public string ManageFreezePanes(
-        string spreadSheetPath,
-        string spreadSheetName,
-        string action,
-        string? freezeAtAddress = null
-    )
-    {
-        try
-        {
-            using var sanitized = WorkbookReader.SanitizePhoneticRuns(spreadSheetPath);
-            using var workbook = new XLWorkbook(sanitized);
-            var worksheet = WorkbookReader.GetWorksheet(workbook, spreadSheetName);
-            string message;
-
-            switch (action.Trim().ToLowerInvariant())
-            {
-                case "set":
-                    ArgumentException.ThrowIfNullOrWhiteSpace(freezeAtAddress);
-                    var anchor = worksheet.Cell(freezeAtAddress).Address;
-                    worksheet.SheetView.Freeze(anchor.RowNumber - 1, anchor.ColumnNumber - 1);
-                    message = $"Froze panes on '{spreadSheetName}' at '{freezeAtAddress}'.";
-                    break;
-
-                case "clear":
-                    worksheet.SheetView.Freeze(0, 0);
-                    message = $"Cleared frozen panes on '{spreadSheetName}'.";
-                    break;
-
-                default:
-                    throw new InvalidOperationException($"Unknown action '{action}'. Expected 'set' or 'clear'.");
-            }
-
-            workbook.SaveAs(spreadSheetPath);
-            return message;
-        }
-        catch (Exception ex) when (ex is not InvalidOperationException and not ArgumentException)
-        {
-            throw new InvalidOperationException($"Error updating Excel file: {ex.Message}", ex);
-        }
-    }
-
-    /// <summary>
     /// Inserts or deletes whole rows or columns on a worksheet, shifting subsequent cells. 'action'
     /// must be "insertRows", "deleteRows", "insertColumns", or "deleteColumns". 'target' is a
     /// 1-based row number (Rows actions) or a column letter (Columns actions). 'count' (default 1)
